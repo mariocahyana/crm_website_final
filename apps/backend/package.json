@@ -10,19 +10,25 @@
     "migrate": "sequelize-cli db:migrate",
     "migrate:undo": "sequelize-cli db:migrate:undo",
     "migrate:undo:all": "sequelize-cli db:migrate:undo:all",
-    "migrate:fresh": "npm run migrate:undo:all; npm run migrate"
+    "migrate:fresh": "npm run migrate:undo:all; npm run migrate",
+    "seed:all": "sequelize-cli db:seed:all",
+    "seed:undo:all": "sequelize-cli db:seed:undo:all"
   },
   "dependencies": {
+    "bcryptjs": "^3.0.3",
     "cors": "^2.8.5",
     "dotenv": "^16.6.1",
     "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.3",
     "pg": "^8.20.0",
     "pg-hstore": "^2.3.4",
     "sequelize": "^6.37.8"
   },
   "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^25.6.0",
     "nodemon": "^3.1.4",
     "sequelize-cli": "^6.6.5",

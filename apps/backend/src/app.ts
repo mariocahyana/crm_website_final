@@ -1,6 +1,9 @@
 import cors from 'cors';
 import express from 'express';
-import healthRoutes from './routes/health.routes.js';
+import healthRoutes from './routes/health.routes';
+import authRoutes from './routes/auth.routes';
+import profileRoutes from './routes/profile.routes';
+import { errorHandler } from './middlewares/errorHandler';
 
 const app = express();
 
@@ -14,5 +17,10 @@ app.get('/', (_req, res) => {
 });
 
 app.use('/api/health', healthRoutes);
+app.use('/api/auth', authRoutes);
+app.use('/api/profile', profileRoutes);
+
+// Error handler MUST be last
+app.use(errorHandler);
 
 export default app;
