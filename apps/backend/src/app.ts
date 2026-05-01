@@ -1,5 +1,6 @@
 import cors from 'cors';
 import express from 'express';
+import path from 'path';
 import healthRoutes from './routes/health.routes';
 import authRoutes from './routes/auth.routes';
 import profileRoutes from './routes/profile.routes';
@@ -12,6 +13,9 @@ const app = express();
 
 app.use(cors());
 app.use(express.json());
+
+// Serve static files dari folder uploads
+app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
 app.get('/', (_req, res) => {
   res.json({

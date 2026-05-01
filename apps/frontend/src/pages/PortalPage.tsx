@@ -113,9 +113,54 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
     amount: 0,
     expense_date: new Date().toISOString().slice(0, 10),
     description: '',
-    receipt_url: '',
+    receipt_file: null as File | null,
   });
+  const [photoModalOpen, setPhotoModalOpen] = useState(false);
+  const [selectedPhotoUrl, setSelectedPhotoUrl] = useState<string | null>(null);
+  const [receiptPreviewUrl, setReceiptPreviewUrl] = useState<string | null>(null);
+  const receiptInputRef = useRef<HTMLInputElement | null>(null);
   const token = auth.getToken();
+
+  const handleViewPhoto = (receiptUrl: string | null) => {
+    if (receiptUrl) {
+      let fullUrl: string;
+      
+      if (receiptUrl.startsWith('http')) {
+        fullUrl = receiptUrl;
+      } else {
+        // receiptUrl format: /uploads/filename
+        const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
+        const baseUrl = apiBase.replace('/api', ''); // Remove /api to get http://localhost:5000
+        fullUrl = baseUrl + receiptUrl;
+      }
+      
+      console.log('Opening photo:', fullUrl); // Debug
+      setSelectedPhotoUrl(fullUrl);
+      setPhotoModalOpen(true);
+    }
+  };
+
+  const handleClosePhotoModal = () => {
+    setPhotoModalOpen(false);
+    setSelectedPhotoUrl(null);
+  };
+
+  const handleReceiptFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] || null;
+
+    setReimbursementForm((prev) => ({ ...prev, receipt_file: file }));
+
+    // revoke previous preview URL if any
+    if (receiptPreviewUrl) {
+      try { URL.revokeObjectURL(receiptPreviewUrl); } catch {}
+      setReceiptPreviewUrl(null);
+    }
+
+    if (file) {
+      const objUrl = URL.createObjectURL(file);
+      setReceiptPreviewUrl(objUrl);
+    }
+  };
 
   const activeUsers = useMemo(() => users.filter((u) => u.is_active).length, [users]);
   const canReviewLeaves = currentUser.user.role === 'admin' || currentUser.user.role === 'manager';
@@ -415,14 +460,22 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
         amount: Number(reimbursementForm.amount),
         expense_date: reimbursementForm.expense_date,
         description: reimbursementForm.description,
-        receipt_url: reimbursementForm.receipt_url,
+        receipt_file: reimbursementForm.receipt_file,
       });
       setReimbursementForm((prev) => ({
         ...prev,
         amount: 0,
         description: '',
-        receipt_url: '',
+        receipt_file: null,
       }));
+        // clean up preview URL
+        if (receiptPreviewUrl) {
+          try { URL.revokeObjectURL(receiptPreviewUrl); } catch {}
+          setReceiptPreviewUrl(null);
+        }
+        if (receiptInputRef && receiptInputRef.current) {
+          try { receiptInputRef.current.value = ''; } catch {}
+        }
       setReimbursementMessage('Request reimburse berhasil dibuat');
       await loadReimbursements();
     } catch (err) {
@@ -883,13 +936,37 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
                 />
               </div>
               <div className="form-group">
-                <label>Receipt URL</label>
+                <label>Upload Foto Struk/Bukti</label>
                 <input
-                  value={reimbursementForm.receipt_url}
-                  onChange={(e) => setReimbursementForm((prev) => ({ ...prev, receipt_url: e.target.value }))}
-                  placeholder="Link bukti pembayaran"
+                  ref={receiptInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleReceiptFileChange}
                   disabled={reimbursementSubmitLoading}
                 />
+                {receiptPreviewUrl && (
+                  <div style={{ marginTop: 8 }}>
+                    <img
+                      src={receiptPreviewUrl}
+                      alt="Preview struk"
+                      style={{ maxWidth: 200, maxHeight: 160, display: 'block', marginBottom: 6, objectFit: 'cover' }}
+                    />
+                    <button
+                      type="button"
+                      className="secondary-btn"
+                      onClick={() => {
+                        try { if (receiptPreviewUrl) URL.revokeObjectURL(receiptPreviewUrl); } catch {}
+                        setReceiptPreviewUrl(null);
+                        setReimbursementForm((prev) => ({ ...prev, receipt_file: null }));
+                        if (receiptInputRef.current) {
+                          try { receiptInputRef.current.value = ''; } catch {}
+                        }
+                      }}
+                    >
+                      Hapus Foto
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
             <div className="form-actions compact-actions">
@@ -921,7 +998,26 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
                       {' '}{request.expense_date}
                     </p>
                     {request.description && <p>Deskripsi: {request.description}</p>}
-                    {request.receipt_url && <p>Bukti: {request.receipt_url}</p>}
+                    {request.receipt_url && (
+                      <p>
+                        Bukti:{' '}
+                        <button
+                          type="button"
+                          onClick={() => handleViewPhoto(request.receipt_url)}
+                          className="link-btn"
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            color: '#0066cc',
+                            cursor: 'pointer',
+                            textDecoration: 'underline',
+                            padding: 0,
+                          }}
+                        >
+                          Lihat Foto
+                        </button>
+                      </p>
+                    )}
                     {request.decline_reason && <p>Ditolak: {request.decline_reason}</p>}
                   </div>
                   <div className="reimburse-actions">
@@ -1175,6 +1271,59 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
             </div>
           )}
         </section>
+      )}
+
+      {/* Photo Modal */}
+      {photoModalOpen && selectedPhotoUrl && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0, 0, 0, 0.7)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+          }}
+          onClick={handleClosePhotoModal}
+        >
+          <div
+            style={{
+              background: 'white',
+              borderRadius: '8px',
+              padding: '20px',
+              maxWidth: '90vw',
+              maxHeight: '90vh',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <img
+              src={selectedPhotoUrl}
+              alt="Reimbursement Receipt"
+              style={{
+                maxWidth: '80vw',
+                maxHeight: '70vh',
+                objectFit: 'contain',
+              }}
+            />
+            <button
+              type="button"
+              onClick={handleClosePhotoModal}
+              className="primary-btn"
+              style={{
+                marginTop: '15px',
+              }}
+            >
+              Tutup
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );
