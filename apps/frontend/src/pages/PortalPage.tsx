@@ -17,6 +17,8 @@ interface SessionUser {
     phone: string;
     address: string;
     photo_url: string | null;
+    join_date?: string;
+    job_title?: string;
   } | null;
 }
 
@@ -46,6 +48,7 @@ function isDateWithinRange(dateKey: string, startDate: string, endDate: string) 
 }
 
 export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPageProps) {
+  const defaultProfilePhoto = '/images/default-profile.svg';
   const portalType = currentUser.user.role === 'admin'
     ? 'Admin'
     : currentUser.user.role === 'manager'
@@ -99,8 +102,11 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
   });
   const [createdEmployeeNumber, setCreatedEmployeeNumber] = useState<string>('');
   const [profileForm, setProfileForm] = useState({
+    full_name: currentUser.employee?.full_name || '',
     phone: currentUser.employee?.phone || '',
     address: currentUser.employee?.address || '',
+    photo_file: null as File | null,
+    photo_deleted: false,
   });
   const [leaveForm, setLeaveForm] = useState({
     leave_type_id: '',
@@ -118,8 +124,47 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
   const [photoModalOpen, setPhotoModalOpen] = useState(false);
   const [selectedPhotoUrl, setSelectedPhotoUrl] = useState<string | null>(null);
   const [receiptPreviewUrl, setReceiptPreviewUrl] = useState<string | null>(null);
+  const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null);
   const receiptInputRef = useRef<HTMLInputElement | null>(null);
+  const photoInputRef = useRef<HTMLInputElement | null>(null);
   const token = auth.getToken();
+
+  const getDefaultProfileForm = () => ({
+    full_name: currentUser.employee?.full_name || '',
+    phone: currentUser.employee?.phone || '',
+    address: currentUser.employee?.address || '',
+    photo_file: null as File | null,
+    photo_deleted: false,
+  });
+
+  const getDefaultLeaveForm = () => ({
+    leave_type_id: leaveTypes[0]?.id || '',
+    start_date: new Date().toISOString().slice(0, 10),
+    end_date: new Date().toISOString().slice(0, 10),
+    reason: '',
+  });
+
+  const getDefaultReimbursementForm = () => ({
+    category: 'Transport',
+    amount: 0,
+    expense_date: new Date().toISOString().slice(0, 10),
+    description: '',
+    receipt_file: null as File | null,
+  });
+
+  const getDefaultUserForm = () => ({
+    full_name: '',
+    email: '',
+    password: '',
+    role: 'staff' as 'admin' | 'staff' | 'manager',
+    join_date: new Date().toISOString().slice(0, 10),
+    base_salary: 0,
+    job_title: '',
+    phone: '',
+    address: '',
+    department_id: '',
+    manager_id: '',
+  });
 
   const handleViewPhoto = (receiptUrl: string | null) => {
     if (receiptUrl) {
@@ -139,6 +184,25 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
       setPhotoModalOpen(true);
     }
   };
+
+  const getFullPhotoUrl = (photoUrl: string | null | undefined): string | null => {
+    if (!photoUrl) return null;
+    
+    if (photoUrl.startsWith('http')) {
+      return photoUrl;
+    } else {
+      // photoUrl format: /uploads/filename
+      const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
+      const baseUrl = apiBase.replace('/api', ''); // Remove /api to get http://localhost:5000
+      return baseUrl + photoUrl;
+    }
+  };
+
+  const currentProfilePhotoSrc = profileForm.photo_deleted
+    ? defaultProfilePhoto
+    : getFullPhotoUrl(currentUser.employee?.photo_url) ?? defaultProfilePhoto;
+
+  const headerProfilePhotoSrc = getFullPhotoUrl(currentUser.employee?.photo_url) ?? defaultProfilePhoto;
 
   const handleClosePhotoModal = () => {
     setPhotoModalOpen(false);
@@ -160,6 +224,81 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
       const objUrl = URL.createObjectURL(file);
       setReceiptPreviewUrl(objUrl);
     }
+  };
+
+  const handlePhotoFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] || null;
+
+    setProfileForm((prev) => ({ ...prev, photo_file: file }));
+
+    // revoke previous preview URL if any
+    if (photoPreviewUrl) {
+      try { URL.revokeObjectURL(photoPreviewUrl); } catch {}
+      setPhotoPreviewUrl(null);
+    }
+
+    if (file) {
+      const objUrl = URL.createObjectURL(file);
+      setPhotoPreviewUrl(objUrl);
+    }
+  };
+
+  const resetProfileDraft = () => {
+    if (photoPreviewUrl) {
+      try { URL.revokeObjectURL(photoPreviewUrl); } catch {}
+    }
+
+    setProfileForm({
+      full_name: currentUser.employee?.full_name || '',
+      phone: currentUser.employee?.phone || '',
+      address: currentUser.employee?.address || '',
+      photo_file: null,
+      photo_deleted: false,
+    });
+
+    if (photoInputRef.current) {
+      try { photoInputRef.current.value = ''; } catch {}
+    }
+
+    setPhotoPreviewUrl(null);
+    setProfileError('');
+    setProfileMessage('');
+  };
+
+  const handleMenuChange = (nextMenu: PortalMenu) => {
+    if (activeMenu === 'profile' && nextMenu !== 'profile') {
+      resetProfileDraft();
+    }
+
+    if (activeMenu === 'leave' && nextMenu !== 'leave') {
+      setLeaveForm(getDefaultLeaveForm());
+      setLeaveError('');
+      setLeaveMessage('');
+    }
+
+    if (activeMenu === 'reimburse' && nextMenu !== 'reimburse') {
+      if (receiptPreviewUrl) {
+        try { URL.revokeObjectURL(receiptPreviewUrl); } catch {}
+      }
+
+      setReimbursementForm(getDefaultReimbursementForm());
+      setReimbursementError('');
+      setReimbursementMessage('');
+      setReceiptPreviewUrl(null);
+      if (receiptInputRef.current) {
+        try { receiptInputRef.current.value = ''; } catch {}
+      }
+    }
+
+    if (activeMenu === 'users' && nextMenu !== 'users') {
+      resetForm();
+      setEditingUserId(null);
+      setEditingEmployeeId(null);
+      setCreatedEmployeeNumber('');
+      setUsersError('');
+    }
+
+    setActiveMenu(nextMenu);
   };
 
   const activeUsers = useMemo(() => users.filter((u) => u.is_active).length, [users]);
@@ -305,11 +444,25 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
   }, [canManageUsers, token]);
 
   useEffect(() => {
-    setProfileForm({
-      phone: currentUser.employee?.phone || '',
-      address: currentUser.employee?.address || '',
-    });
-  }, [currentUser.employee?.phone, currentUser.employee?.address]);
+    setProfileForm(getDefaultProfileForm());
+    // Reset photo preview when user changes
+    if (photoPreviewUrl) {
+      try { URL.revokeObjectURL(photoPreviewUrl); } catch {}
+      setPhotoPreviewUrl(null);
+    }
+  }, [
+    currentUser.employee?.full_name,
+    currentUser.employee?.phone,
+    currentUser.employee?.address,
+    currentUser.employee?.photo_url,
+  ]);
+
+  useEffect(() => {
+    setLeaveForm((current) => ({
+      ...current,
+      leave_type_id: current.leave_type_id || leaveTypes[0]?.id || '',
+    }));
+  }, [leaveTypes]);
 
   const loadLeaves = async () => {
     if (!token) return;
@@ -366,15 +519,31 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
       setProfileError('');
       setProfileMessage('');
       const employee = await profileApi.updateMyProfile(token, {
+        full_name: profileForm.full_name,
         phone: profileForm.phone,
         address: profileForm.address,
+        photo_file: profileForm.photo_file || undefined,
+        photo_deleted: profileForm.photo_deleted,
       });
 
       onEmployeeUpdate({
         ...currentUser.employee,
+        full_name: employee.full_name || '',
         phone: employee.phone || '',
         address: employee.address || '',
+        photo_url: employee.photo_url || null,
       });
+      
+      // Reset photo file and preview after successful update
+      setProfileForm((prev) => ({ ...prev, photo_file: null, photo_deleted: false }));
+      if (photoInputRef.current) {
+        try { photoInputRef.current.value = ''; } catch {}
+      }
+      if (photoPreviewUrl) {
+        try { URL.revokeObjectURL(photoPreviewUrl); } catch {}
+        setPhotoPreviewUrl(null);
+      }
+      
       setProfileMessage('Profile berhasil diperbarui');
     } catch (err) {
       setProfileError(err instanceof Error ? err.message : 'Gagal memperbarui profile');
@@ -607,9 +776,39 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
           <h1>Selamat datang, {employeeName}</h1>
           <p className="subtext">Anda sudah login.</p>
         </div>
-        <button onClick={onLogout} className="danger-btn">
-          Logout
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <button onClick={onLogout} className="danger-btn">
+            Logout
+          </button>
+          <button
+            type="button"
+            onClick={() => handleMenuChange('profile')}
+            title="Buka Profile"
+            aria-label="Buka Profile"
+            style={{
+              border: 'none',
+              background: 'transparent',
+              padding: 0,
+              cursor: 'pointer',
+              width: 44,
+              height: 44,
+              borderRadius: 8,
+            }}
+          >
+            <img
+              src={headerProfilePhotoSrc}
+              alt="Foto profil user"
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: 8,
+                objectFit: 'cover',
+                border: '2px solid #d1d5db',
+                display: 'block',
+              }}
+            />
+          </button>
+        </div>
       </header>
 
       <nav className="portal-nav" aria-label="Portal menu">
@@ -619,7 +818,7 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
               key={menu.id}
               type="button"
               className={activeMenu === menu.id ? 'menu-tab active' : 'menu-tab'}
-              onClick={() => setActiveMenu(menu.id)}
+              onClick={() => handleMenuChange(menu.id)}
             >
               {menu.label}
             </button>
@@ -630,7 +829,7 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
           <select
             id="portal-menu"
             value={activeMenu}
-            onChange={(e) => setActiveMenu(e.target.value as PortalMenu)}
+            onChange={(e) => handleMenuChange(e.target.value as PortalMenu)}
           >
             {portalMenus.map((menu) => (
               <option key={menu.id} value={menu.id}>{menu.label}</option>
@@ -675,7 +874,106 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
             {profileError && <p className="inline-error">{profileError}</p>}
             {profileMessage && <p className="inline-success">{profileMessage}</p>}
 
+            {/* Photo Section */}
+            <div className="form-group" style={{ marginBottom: 20 }}>
+              <label>Foto Profile</label>
+              <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                {/* Current Photo */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <img
+                    src={currentProfilePhotoSrc}
+                    alt="Current profile photo"
+                    style={{
+                      width: 140,
+                      height: 140,
+                      borderRadius: 8,
+                      objectFit: 'cover',
+                      border: '2px solid #ddd',
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="secondary-btn"
+                    onClick={() => {
+                      setProfileForm((prev) => ({ ...prev, photo_deleted: true }));
+                    }}
+                    style={{ marginTop: 8, width: '100%' }}
+                  >
+                    Hapus Foto
+                  </button>
+                </div>
+
+                {/* Preview Photo */}
+                {photoPreviewUrl && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <div style={{ fontSize: 12, fontWeight: 500, color: '#666' }}>Preview Foto Baru</div>
+                    <div>
+                      <img
+                        src={photoPreviewUrl}
+                        alt="Preview new photo"
+                        style={{
+                          width: 140,
+                          height: 140,
+                          borderRadius: 8,
+                          objectFit: 'cover',
+                          border: '2px solid #4CAF50',
+                        }}
+                      />
+                      <button
+                        type="button"
+                        className="secondary-btn"
+                        onClick={() => {
+                          try { if (photoPreviewUrl) URL.revokeObjectURL(photoPreviewUrl); } catch {}
+                          setPhotoPreviewUrl(null);
+                          setProfileForm((prev) => ({ ...prev, photo_file: null }));
+                          if (photoInputRef.current) {
+                            try { photoInputRef.current.value = ''; } catch {}
+                          }
+                        }}
+                        style={{ marginTop: 8, width: '100%' }}
+                      >
+                        Batal
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Upload Section */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, justifyContent: 'center' }}>
+                  <div style={{ fontSize: 12, fontWeight: 500, color: '#666' }}>Upload Foto Baru</div>
+                  <input
+                    ref={photoInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handlePhotoFileChange}
+                    disabled={profileLoading}
+                    style={{
+                      display: 'none',
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="primary-btn"
+                    onClick={() => photoInputRef.current?.click()}
+                    disabled={profileLoading}
+                  >
+                    Pilih Foto
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Editable Fields */}
             <div className="form-row-two">
+              <div className="form-group">
+                <label>Nama Lengkap</label>
+                <input
+                  value={profileForm.full_name}
+                  onChange={(e) => setProfileForm((prev) => ({ ...prev, full_name: e.target.value }))}
+                  placeholder="Nama lengkap"
+                  disabled={profileLoading}
+                />
+              </div>
               <div className="form-group">
                 <label>Nomor Telepon</label>
                 <input
@@ -685,6 +983,9 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
                   disabled={profileLoading}
                 />
               </div>
+            </div>
+
+            <div className="form-row-two">
               <div className="form-group">
                 <label>Alamat</label>
                 <input
@@ -692,6 +993,28 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
                   onChange={(e) => setProfileForm((prev) => ({ ...prev, address: e.target.value }))}
                   placeholder="Alamat"
                   disabled={profileLoading}
+                />
+              </div>
+            </div>
+
+            {/* Read-only Fields */}
+            <div className="form-row-two">
+              <div className="form-group">
+                <label>Tanggal Bergabung</label>
+                <input
+                  type="text"
+                  value={currentUser.employee.join_date ? new Date(currentUser.employee.join_date).toLocaleDateString('id-ID') : '-'}
+                  disabled={true}
+                  style={{ backgroundColor: '#f5f5f5' }}
+                />
+              </div>
+              <div className="form-group">
+                <label>Jabatan</label>
+                <input
+                  type="text"
+                  value={currentUser.employee.job_title || '-'}
+                  disabled={true}
+                  style={{ backgroundColor: '#f5f5f5' }}
                 />
               </div>
             </div>
