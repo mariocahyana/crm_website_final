@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { auth } from '../services/auth';
+import { leavesApi, type LeaveRequest, type LeaveType } from '../services/leaves';
 import { profileApi } from '../services/profile';
 import { usersApi, type ManagedUser, type UserManagementOptions } from '../services/users';
 
@@ -24,6 +25,25 @@ interface PortalPageProps {
   onEmployeeUpdate: (employee: SessionUser['employee']) => void;
 }
 
+type PortalMenu = 'overview' | 'profile' | 'leave' | 'users';
+
+const monthFormatter = new Intl.DateTimeFormat('id-ID', {
+  month: 'long',
+  year: 'numeric',
+});
+
+const dayFormatter = new Intl.DateTimeFormat('id-ID', {
+  weekday: 'short',
+});
+
+function toDateKey(date: Date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function isDateWithinRange(dateKey: string, startDate: string, endDate: string) {
+  return dateKey >= startDate && dateKey <= endDate;
+}
+
 export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPageProps) {
   const portalType = currentUser.user.role === 'admin'
     ? 'Admin'
@@ -39,6 +59,17 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileMessage, setProfileMessage] = useState('');
   const [profileError, setProfileError] = useState('');
+  const [leaveTypes, setLeaveTypes] = useState<LeaveType[]>([]);
+  const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
+  const [leaveLoading, setLeaveLoading] = useState(false);
+  const [leaveSubmitLoading, setLeaveSubmitLoading] = useState(false);
+  const [leaveError, setLeaveError] = useState('');
+  const [leaveMessage, setLeaveMessage] = useState('');
+  const [activeMenu, setActiveMenu] = useState<PortalMenu>('overview');
+  const [calendarMonth, setCalendarMonth] = useState(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  });
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [editingEmployeeId, setEditingEmployeeId] = useState<string | null>(null);
   const [options, setOptions] = useState<UserManagementOptions>({
@@ -65,9 +96,69 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
     phone: currentUser.employee?.phone || '',
     address: currentUser.employee?.address || '',
   });
+  const [leaveForm, setLeaveForm] = useState({
+    leave_type_id: '',
+    start_date: new Date().toISOString().slice(0, 10),
+    end_date: new Date().toISOString().slice(0, 10),
+    reason: '',
+  });
   const token = auth.getToken();
 
   const activeUsers = useMemo(() => users.filter((u) => u.is_active).length, [users]);
+  const canReviewLeaves = currentUser.user.role === 'admin' || currentUser.user.role === 'manager';
+  const portalMenus = useMemo(() => {
+    const menus: Array<{ id: PortalMenu; label: string }> = [
+      { id: 'overview', label: 'Overview' },
+      { id: 'profile', label: 'Profile' },
+      { id: 'leave', label: 'Leave' },
+    ];
+
+    if (canManageUsers) {
+      menus.push({ id: 'users', label: 'User Management' });
+    }
+
+    return menus;
+  }, [canManageUsers]);
+
+  const calendarDays = useMemo(() => {
+    const year = calendarMonth.getFullYear();
+    const month = calendarMonth.getMonth();
+    const firstDay = new Date(year, month, 1);
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const leadingBlankDays = firstDay.getDay();
+    const days: Array<{
+      key: string;
+      date: Date | null;
+      dayNumber: number | null;
+      requests: LeaveRequest[];
+    }> = [];
+
+    for (let i = 0; i < leadingBlankDays; i += 1) {
+      days.push({ key: `blank-${i}`, date: null, dayNumber: null, requests: [] });
+    }
+
+    for (let day = 1; day <= daysInMonth; day += 1) {
+      const date = new Date(year, month, day);
+      const dateKey = toDateKey(date);
+      days.push({
+        key: dateKey,
+        date,
+        dayNumber: day,
+        requests: leaveRequests.filter((request) => (
+          request.status !== 'cancelled'
+          && isDateWithinRange(dateKey, request.start_date, request.end_date)
+        )),
+      });
+    }
+
+    return days;
+  }, [calendarMonth, leaveRequests]);
+
+  const leaveSummary = useMemo(() => ({
+    pending: leaveRequests.filter((request) => request.status === 'pending').length,
+    approved: leaveRequests.filter((request) => request.status === 'approved').length,
+    declined: leaveRequests.filter((request) => request.status === 'declined').length,
+  }), [leaveRequests]);
 
   const resetForm = () => {
     setForm({
@@ -153,6 +244,33 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
     });
   }, [currentUser.employee?.phone, currentUser.employee?.address]);
 
+  const loadLeaves = async () => {
+    if (!token) return;
+
+    try {
+      setLeaveLoading(true);
+      setLeaveError('');
+      const [types, requests] = await Promise.all([
+        leavesApi.listTypes(token),
+        leavesApi.listRequests(token),
+      ]);
+      setLeaveTypes(types);
+      setLeaveRequests(requests);
+      setLeaveForm((prev) => ({
+        ...prev,
+        leave_type_id: prev.leave_type_id || types[0]?.id || '',
+      }));
+    } catch (err) {
+      setLeaveError(err instanceof Error ? err.message : 'Gagal memuat data cuti');
+    } finally {
+      setLeaveLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadLeaves();
+  }, [token]);
+
   const handleProfileUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!token || !currentUser.employee) return;
@@ -176,6 +294,70 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
       setProfileError(err instanceof Error ? err.message : 'Gagal memperbarui profile');
     } finally {
       setProfileLoading(false);
+    }
+  };
+
+  const handleCreateLeave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!token) return;
+
+    try {
+      setLeaveSubmitLoading(true);
+      setLeaveError('');
+      setLeaveMessage('');
+      await leavesApi.createRequest(token, leaveForm);
+      setLeaveForm((prev) => ({
+        ...prev,
+        start_date: new Date().toISOString().slice(0, 10),
+        end_date: new Date().toISOString().slice(0, 10),
+        reason: '',
+      }));
+      setLeaveMessage('Request cuti berhasil dibuat');
+      await loadLeaves();
+    } catch (err) {
+      setLeaveError(err instanceof Error ? err.message : 'Gagal membuat request cuti');
+    } finally {
+      setLeaveSubmitLoading(false);
+    }
+  };
+
+  const handleCancelLeave = async (requestId: string) => {
+    if (!token) return;
+
+    try {
+      setLeaveError('');
+      setLeaveMessage('');
+      await leavesApi.cancelRequest(token, requestId);
+      setLeaveMessage('Request cuti berhasil dibatalkan');
+      await loadLeaves();
+    } catch (err) {
+      setLeaveError(err instanceof Error ? err.message : 'Gagal membatalkan request cuti');
+    }
+  };
+
+  const handleDecideLeave = async (requestId: string, status: 'approved' | 'declined') => {
+    if (!token) return;
+
+    const declineReason = status === 'declined'
+      ? window.prompt('Alasan penolakan') || ''
+      : '';
+
+    if (status === 'declined' && !declineReason.trim()) {
+      setLeaveError('Alasan penolakan wajib diisi');
+      return;
+    }
+
+    try {
+      setLeaveError('');
+      setLeaveMessage('');
+      await leavesApi.decideRequest(token, requestId, {
+        status,
+        decline_reason: declineReason,
+      });
+      setLeaveMessage(status === 'approved' ? 'Request cuti disetujui' : 'Request cuti ditolak');
+      await loadLeaves();
+    } catch (err) {
+      setLeaveError(err instanceof Error ? err.message : 'Gagal memproses request cuti');
     }
   };
 
@@ -259,6 +441,14 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
     }
   };
 
+  const goToPreviousMonth = () => {
+    setCalendarMonth((current) => new Date(current.getFullYear(), current.getMonth() - 1, 1));
+  };
+
+  const goToNextMonth = () => {
+    setCalendarMonth((current) => new Date(current.getFullYear(), current.getMonth() + 1, 1));
+  };
+
   return (
     <div className="portal-shell">
       <header className="portal-head">
@@ -272,13 +462,58 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
         </button>
       </header>
 
-      <section className="panel">
-        <h3>Informasi Akun</h3>
-        <p><strong>Nama:</strong> {employeeName}</p>
-        <p><strong>Email:</strong> {currentUser.user.email}</p>
-        <p><strong>Role:</strong> {currentUser.user.role.toUpperCase()}</p>
-      </section>
+      <nav className="portal-nav" aria-label="Portal menu">
+        <div className="menu-tabs">
+          {portalMenus.map((menu) => (
+            <button
+              key={menu.id}
+              type="button"
+              className={activeMenu === menu.id ? 'menu-tab active' : 'menu-tab'}
+              onClick={() => setActiveMenu(menu.id)}
+            >
+              {menu.label}
+            </button>
+          ))}
+        </div>
+        <div className="menu-select-wrap">
+          <label htmlFor="portal-menu">Menu</label>
+          <select
+            id="portal-menu"
+            value={activeMenu}
+            onChange={(e) => setActiveMenu(e.target.value as PortalMenu)}
+          >
+            {portalMenus.map((menu) => (
+              <option key={menu.id} value={menu.id}>{menu.label}</option>
+            ))}
+          </select>
+        </div>
+      </nav>
 
+      {activeMenu === 'overview' && (
+      <section className="panel overview-panel">
+        <h3>Informasi Akun</h3>
+        <div className="summary-grid">
+          <div className="summary-item">
+            <span>Nama</span>
+            <strong>{employeeName}</strong>
+          </div>
+          <div className="summary-item">
+            <span>Email</span>
+            <strong>{currentUser.user.email}</strong>
+          </div>
+          <div className="summary-item">
+            <span>Role</span>
+            <strong>{currentUser.user.role.toUpperCase()}</strong>
+          </div>
+          <div className="summary-item">
+            <span>Pending Leave</span>
+            <strong>{leaveSummary.pending}</strong>
+          </div>
+        </div>
+      </section>
+      )}
+
+      {activeMenu === 'profile' && (
       <section className="panel profile-panel">
         <h3>Profile</h3>
         {currentUser.employee ? (
@@ -317,8 +552,171 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
           <p>Data employee belum tersedia untuk akun ini.</p>
         )}
       </section>
+      )}
 
-      {canManageUsers && (
+      {activeMenu === 'leave' && (
+      <section className="panel leave-panel">
+        <h3>Leave Management</h3>
+        <div className="section-head">
+          <p>{canReviewLeaves ? 'Review dan ajukan request cuti.' : 'Ajukan dan pantau request cuti Anda.'}</p>
+          <div className="leave-summary">
+            <span>Pending: {leaveSummary.pending}</span>
+            <span>Approved: {leaveSummary.approved}</span>
+            <span>Declined: {leaveSummary.declined}</span>
+          </div>
+        </div>
+
+        {leaveError && <p className="inline-error">{leaveError}</p>}
+        {leaveMessage && <p className="inline-success">{leaveMessage}</p>}
+
+        {currentUser.employee ? (
+          <form className="leave-form crm-form" onSubmit={handleCreateLeave}>
+            <div className="form-row-three">
+              <div className="form-group">
+                <label>Jenis Cuti</label>
+                <select
+                  value={leaveForm.leave_type_id}
+                  onChange={(e) => setLeaveForm((prev) => ({ ...prev, leave_type_id: e.target.value }))}
+                  required
+                  disabled={leaveSubmitLoading || leaveTypes.length === 0}
+                >
+                  {leaveTypes.length === 0 && <option value="">Belum ada jenis cuti</option>}
+                  {leaveTypes.map((type) => (
+                    <option key={type.id} value={type.id}>
+                      {type.name} ({type.is_paid ? 'Paid' : 'Unpaid'})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="form-group">
+                <label>Tanggal Mulai</label>
+                <input
+                  type="date"
+                  value={leaveForm.start_date}
+                  onChange={(e) => setLeaveForm((prev) => ({ ...prev, start_date: e.target.value }))}
+                  required
+                  disabled={leaveSubmitLoading}
+                />
+              </div>
+              <div className="form-group">
+                <label>Tanggal Selesai</label>
+                <input
+                  type="date"
+                  value={leaveForm.end_date}
+                  onChange={(e) => setLeaveForm((prev) => ({ ...prev, end_date: e.target.value }))}
+                  required
+                  disabled={leaveSubmitLoading}
+                />
+              </div>
+            </div>
+            <div className="form-row-one">
+              <div className="form-group">
+                <label>Alasan</label>
+                <input
+                  value={leaveForm.reason}
+                  onChange={(e) => setLeaveForm((prev) => ({ ...prev, reason: e.target.value }))}
+                  placeholder="Alasan cuti"
+                  disabled={leaveSubmitLoading}
+                />
+              </div>
+            </div>
+            <div className="form-actions compact-actions">
+              <button type="submit" disabled={leaveSubmitLoading || leaveTypes.length === 0} className="primary-btn">
+                {leaveSubmitLoading ? 'Mengirim...' : 'Ajukan Cuti'}
+              </button>
+            </div>
+          </form>
+        ) : (
+          <p>Data employee belum tersedia untuk mengajukan cuti.</p>
+        )}
+
+        <div className="calendar-panel">
+          <div className="calendar-header">
+            <button type="button" className="ghost-btn" onClick={goToPreviousMonth}>
+              Sebelumnya
+            </button>
+            <h4>{monthFormatter.format(calendarMonth)}</h4>
+            <button type="button" className="ghost-btn" onClick={goToNextMonth}>
+              Berikutnya
+            </button>
+          </div>
+          <div className="calendar-weekdays">
+            {Array.from({ length: 7 }).map((_, index) => {
+              const day = new Date(2026, 1, index + 1);
+              return <span key={index}>{dayFormatter.format(day)}</span>;
+            })}
+          </div>
+          <div className="calendar-grid">
+            {calendarDays.map((day) => (
+              <div
+                key={day.key}
+                className={day.date ? 'calendar-day' : 'calendar-day calendar-day-empty'}
+              >
+                {day.dayNumber && <span className="calendar-date">{day.dayNumber}</span>}
+                <div className="calendar-events">
+                  {day.requests.slice(0, 3).map((request) => (
+                    <span key={request.id} className={`calendar-event status-${request.status}`}>
+                      {request.employee?.full_name || employeeName}
+                    </span>
+                  ))}
+                  {day.requests.length > 3 && (
+                    <span className="calendar-more">+{day.requests.length - 3} lagi</span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="leave-list">
+          {leaveLoading ? (
+            <p>Memuat data cuti...</p>
+          ) : leaveRequests.length === 0 ? (
+            <p>Belum ada request cuti.</p>
+          ) : (
+            leaveRequests.map((request) => {
+              const isOwnRequest = request.employee_id === currentUser.employee?.id;
+              const canCancel = isOwnRequest && request.status === 'pending';
+              const canDecide = canReviewLeaves && !isOwnRequest && request.status === 'pending';
+
+              return (
+                <div key={request.id} className="leave-item">
+                  <div>
+                    <strong>{request.employee?.full_name || employeeName}</strong>
+                    <p>
+                      {request.leaveType?.name || 'Cuti'} | {request.start_date} - {request.end_date} |
+                      {' '}{request.total_days} hari
+                    </p>
+                    {request.reason && <p>Alasan: {request.reason}</p>}
+                    {request.decline_reason && <p>Ditolak: {request.decline_reason}</p>}
+                  </div>
+                  <div className="leave-actions">
+                    <span className={`status-pill status-${request.status}`}>{request.status.toUpperCase()}</span>
+                    {canCancel && (
+                      <button type="button" className="ghost-btn" onClick={() => handleCancelLeave(request.id)}>
+                        Batalkan
+                      </button>
+                    )}
+                    {canDecide && (
+                      <>
+                        <button type="button" className="primary-btn" onClick={() => handleDecideLeave(request.id, 'approved')}>
+                          Approve
+                        </button>
+                        <button type="button" className="danger-btn" onClick={() => handleDecideLeave(request.id, 'declined')}>
+                          Decline
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </section>
+      )}
+
+      {activeMenu === 'users' && canManageUsers && (
         <section className="panel admin-panel">
           <h3>Manajemen User</h3>
           <p>Total user: {users.length} | Aktif: {activeUsers}</p>
