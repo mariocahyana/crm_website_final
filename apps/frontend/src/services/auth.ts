@@ -7,7 +7,7 @@ interface LoginResponse {
     user: {
       id: string;
       email: string;
-      role: 'admin' | 'staff';
+      role: 'admin' | 'staff' | 'manager';
     };
     employee: {
       id: string;
@@ -25,7 +25,7 @@ interface MeResponse {
     user: {
       id: string;
       email: string;
-      role: 'admin' | 'staff';
+      role: 'admin' | 'staff' | 'manager';
     };
     employee: {
       id: string;
@@ -34,6 +34,21 @@ interface MeResponse {
       address: string;
       photo_url: string | null;
     } | null;
+  };
+}
+
+interface ForgotPasswordResponse {
+  success: boolean;
+  data: {
+    message: string;
+    reset_token?: string;
+  };
+}
+
+interface ResetPasswordResponse {
+  success: boolean;
+  data: {
+    message: string;
   };
 }
 
@@ -55,7 +70,40 @@ export const auth = {
     const res = await fetch(`${API_BASE_URL}/auth/me`, {
       headers: { Authorization: `Bearer ${token}` },
     });
-    if (!res.ok) throw new Error('Session expired');
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.message || 'Session expired');
+    }
+    return res.json();
+  },
+
+  async forgotPassword(email: string): Promise<ForgotPasswordResponse> {
+    const res = await fetch(`${API_BASE_URL}/auth/forgot-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.message || 'Gagal mengirim reset token');
+    }
+
+    return res.json();
+  },
+
+  async resetPassword(token: string, newPassword: string): Promise<ResetPasswordResponse> {
+    const res = await fetch(`${API_BASE_URL}/auth/reset-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, newPassword }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.message || 'Gagal reset password');
+    }
+
     return res.json();
   },
 
@@ -69,5 +117,16 @@ export const auth = {
 
   clearToken() {
     localStorage.removeItem('auth_token');
+  },
+
+  getAuthHeader() {
+    const token = localStorage.getItem('auth_token');
+    if (!token) {
+      return {};
+    }
+
+    return {
+      Authorization: `Bearer ${token}`,
+    };
   },
 };

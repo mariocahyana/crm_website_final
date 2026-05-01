@@ -12,8 +12,8 @@ class ProfileService {
       throw new ValidationError('Employee ID required');
     }
 
-    // Whitelist only certain fields
-    const allowedFields = ['phone', 'address', 'photo_url'];
+    // Whitelist only self-editable contact fields.
+    const allowedFields = ['phone', 'address'];
     const filtered = Object.keys(updates)
       .filter(key => allowedFields.includes(key))
       .reduce((obj, key) => ({ ...obj, [key]: updates[key] }), {});
@@ -48,8 +48,8 @@ class ProfileService {
     updates: any,
     clientIp: string
   ) {
-    // Whitelist only certain fields
-    const allowedFields = ['phone', 'address', 'photo_url'];
+    // Whitelist only editable contact fields.
+    const allowedFields = ['phone', 'address'];
     const filtered = Object.keys(updates)
       .filter(key => allowedFields.includes(key))
       .reduce((obj, key) => ({ ...obj, [key]: updates[key] }), {});

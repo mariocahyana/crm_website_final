@@ -1,8 +1,9 @@
 import { Request, Response, NextFunction } from 'express';
 import { verifyJwt, TokenPayload } from '../utils/jwt';
 import { UnauthorizedError, ForbiddenError } from '../utils/errors';
+import { User } from '../models/index';
 
-export function requireAuth(req: Request, res: Response, next: NextFunction) {
+export async function requireAuth(req: Request, res: Response, next: NextFunction) {
   try {
     const header = req.headers.authorization;
     if (!header || !header.startsWith('Bearer ')) {
@@ -11,6 +12,14 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
 
     const token = header.substring(7);
     const payload: TokenPayload = verifyJwt(token);
+    const activeUser = await User.unscoped().findOne({
+      where: { id: payload.id, is_active: true },
+      attributes: ['id'],
+    });
+
+    if (!activeUser) {
+      throw new UnauthorizedError('Akun Anda telah dinonaktifkan');
+    }
 
     req.authUser = {
       id: payload.id,
@@ -20,6 +29,10 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
 
     next();
   } catch (err) {
+    if (err instanceof UnauthorizedError) {
+      next(err);
+      return;
+    }
     next(new UnauthorizedError('Invalid token'));
   }
 }

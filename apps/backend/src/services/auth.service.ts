@@ -1,9 +1,16 @@
 import crypto from 'crypto';
-import { Op } from 'sequelize';
 import { User, PasswordResetToken, Employee } from '../models/index';
 import { hashPassword, comparePassword } from '../utils/password';
-import { signJwt, TokenPayload } from '../utils/jwt';
+import { signJwt } from '../utils/jwt';
 import { UnauthorizedError, NotFoundError } from '../utils/errors';
+
+type AuthUserRecord = {
+  id: string;
+  email: string;
+  password_hash: string;
+  role: 'admin' | 'staff' | 'manager';
+  is_active: boolean;
+};
 
 class AuthService {
   static async createUser({ email, password, role = 'staff' }: any) {
@@ -15,16 +22,24 @@ class AuthService {
   }
 
   static async login({ email, password }: any) {
-    const user = await User.scope('withPassword').findOne({ where: { email } });
-    if (!user) throw new UnauthorizedError('Invalid credentials');
-    const ok = await comparePassword(password, user.getDataValue('password_hash'));
+    const user = await User.unscoped().findOne({
+      where: { email, is_active: true },
+      attributes: ['id', 'email', 'password_hash', 'role', 'is_active'],
+      raw: true,
+    }) as AuthUserRecord | null;
+    
+    if (!user) {
+      throw new UnauthorizedError('Akun Anda telah dinonaktifkan atau kredensial tidak valid');
+    }
+    
+    const ok = await comparePassword(password, user.password_hash);
     if (!ok) throw new UnauthorizedError('Invalid credentials');
     
     // Get employee data
     let employee = null;
     try {
       const emp = await Employee.findOne({
-        where: { user_id: user.getDataValue('id') },
+        where: { user_id: user.id },
       });
       if (emp) {
         employee = emp.toJSON();
@@ -32,22 +47,25 @@ class AuthService {
     } catch {}
 
     const token = signJwt({
-      id: user.getDataValue('id'),
-      role: user.getDataValue('role'),
+      id: user.id,
+      role: user.role,
       employeeId: employee?.id,
     });
     
     // update last login
     try {
-      await user.update({ last_login_at: new Date() });
+      await User.unscoped().update(
+        { last_login_at: new Date() },
+        { where: { id: user.id } }
+      );
     } catch {}
     
     return {
       token,
       user: {
-        id: user.getDataValue('id'),
-        email: user.getDataValue('email'),
-        role: user.getDataValue('role'),
+        id: user.id,
+        email: user.email,
+        role: user.role,
       },
       employee,
     };
@@ -77,8 +95,15 @@ class AuthService {
   }
 
   static async getMe(userId: string) {
-    const user = await User.findByPk(userId);
+    const user = await User.unscoped().findByPk(userId, {
+      attributes: ['id', 'email', 'role', 'is_active'],
+      raw: true,
+    }) as Omit<AuthUserRecord, 'password_hash'> | null;
+    
     if (!user) throw new NotFoundError('User not found');
+    if (!user.is_active) {
+      throw new UnauthorizedError('Akun Anda telah dinonaktifkan');
+    }
 
     let employee = null;
     try {
@@ -90,9 +115,9 @@ class AuthService {
 
     return {
       user: {
-        id: user.getDataValue('id'),
-        email: user.getDataValue('email'),
-        role: user.getDataValue('role'),
+        id: user.id,
+        email: user.email,
+        role: user.role,
       },
       employee,
     };

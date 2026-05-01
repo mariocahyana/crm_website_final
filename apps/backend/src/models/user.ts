@@ -28,7 +28,7 @@ export default function UserModel(sequelize: any) {
       allowNull: false,
     },
     role: {
-      type: DataTypes.ENUM('admin', 'staff'),
+      type: DataTypes.ENUM('admin', 'staff', 'manager'),
       allowNull: false,
       defaultValue: 'staff',
     },
