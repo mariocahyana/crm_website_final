@@ -4,7 +4,7 @@ interface SessionUser {
   user: {
     id: string;
     email: string;
-    role: 'admin' | 'staff';
+    role: 'admin' | 'staff' | 'manager';
   };
   employee: {
     id: string;
@@ -17,18 +17,18 @@ interface SessionUser {
 
 interface ProtectedRouteProps {
   currentUser: SessionUser | null;
-  role?: 'admin' | 'staff';
+  allowedRoles?: ('admin' | 'staff' | 'manager')[];
   children: React.ReactNode;
 }
 
-export function ProtectedRoute({ currentUser, role, children }: ProtectedRouteProps) {
+export function ProtectedRoute({ currentUser, allowedRoles, children }: ProtectedRouteProps) {
   const location = useLocation();
 
   if (!currentUser) {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  if (role && currentUser.user.role !== role) {
+  if (allowedRoles && !allowedRoles.includes(currentUser.user.role)) {
     return <Navigate to="/" replace />;
   }
 

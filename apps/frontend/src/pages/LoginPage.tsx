@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 
 interface LoginPageProps {
   isLoading: boolean;
@@ -53,6 +54,10 @@ export function LoginPage({ isLoading, error, onSubmit }: LoginPageProps) {
             {isLoading ? 'Memproses...' : 'Masuk'}
           </button>
         </form>
+
+        <p className="form-footer">
+          Lupa password? <Link to="/forgot-password">Reset di sini</Link>
+        </p>
       </section>
     </div>
   );

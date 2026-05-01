@@ -3,6 +3,8 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { auth } from './services/auth';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { LoginPage } from './pages/LoginPage';
+import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
+import { ResetPasswordPage } from './pages/ResetPasswordPage';
 import { PortalPage } from './pages/PortalPage';
 import './styles/global.css';
 
@@ -10,7 +12,7 @@ interface SessionUser {
   user: {
     id: string;
     email: string;
-    role: 'admin' | 'staff';
+    role: 'admin' | 'staff' | 'manager';
   };
   employee: {
     id: string;
@@ -66,6 +68,16 @@ function App() {
     setCurrentUser(null);
   };
 
+  const handleEmployeeUpdate = (employee: SessionUser['employee']) => {
+    setCurrentUser((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        employee,
+      };
+    });
+  };
+
   if (isBootstrapping) {
     return (
       <div className="boot-screen">
@@ -86,23 +98,37 @@ function App() {
             currentUser ? (
               <Navigate to="/" replace />
             ) : (
-              <LoginPage isLoading={isLoginLoading} error={loginError} onSubmit={handleLogin} />
+              <LoginPage
+                isLoading={isLoginLoading}
+                error={loginError}
+                onSubmit={handleLogin}
+              />
             )
           }
         />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
         <Route
           path="/admin"
           element={
-            <ProtectedRoute currentUser={currentUser} role="admin">
-              <PortalPage currentUser={currentUser!} onLogout={handleLogout} />
+            <ProtectedRoute currentUser={currentUser} allowedRoles={['admin', 'manager']}>
+              <PortalPage
+                currentUser={currentUser!}
+                onLogout={handleLogout}
+                onEmployeeUpdate={handleEmployeeUpdate}
+              />
             </ProtectedRoute>
           }
         />
         <Route
           path="/staff"
           element={
-            <ProtectedRoute currentUser={currentUser} role="staff">
-              <PortalPage currentUser={currentUser!} onLogout={handleLogout} />
+            <ProtectedRoute currentUser={currentUser} allowedRoles={['staff']}>
+              <PortalPage
+                currentUser={currentUser!}
+                onLogout={handleLogout}
+                onEmployeeUpdate={handleEmployeeUpdate}
+              />
             </ProtectedRoute>
           }
         />
@@ -110,7 +136,7 @@ function App() {
           path="/"
           element={
             currentUser ? (
-              <Navigate to={currentUser.user.role === 'admin' ? '/admin' : '/staff'} replace />
+              <Navigate to={['admin', 'manager'].includes(currentUser.user.role) ? '/admin' : '/staff'} replace />
             ) : (
               <Navigate to="/login" replace />
             )
