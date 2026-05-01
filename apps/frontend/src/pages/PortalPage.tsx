@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { auth } from '../services/auth';
 import { leavesApi, type LeaveRequest, type LeaveType } from '../services/leaves';
 import { profileApi } from '../services/profile';
+import { reimbursementsApi, type ReimbursementRequest } from '../services/reimbursements';
 import { usersApi, type ManagedUser, type UserManagementOptions } from '../services/users';
 
 interface SessionUser {
@@ -25,7 +26,7 @@ interface PortalPageProps {
   onEmployeeUpdate: (employee: SessionUser['employee']) => void;
 }
 
-type PortalMenu = 'overview' | 'profile' | 'leave' | 'users';
+type PortalMenu = 'overview' | 'profile' | 'leave' | 'reimburse' | 'users';
 
 const monthFormatter = new Intl.DateTimeFormat('id-ID', {
   month: 'long',
@@ -65,6 +66,11 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
   const [leaveSubmitLoading, setLeaveSubmitLoading] = useState(false);
   const [leaveError, setLeaveError] = useState('');
   const [leaveMessage, setLeaveMessage] = useState('');
+  const [reimbursementRequests, setReimbursementRequests] = useState<ReimbursementRequest[]>([]);
+  const [reimbursementLoading, setReimbursementLoading] = useState(false);
+  const [reimbursementSubmitLoading, setReimbursementSubmitLoading] = useState(false);
+  const [reimbursementError, setReimbursementError] = useState('');
+  const [reimbursementMessage, setReimbursementMessage] = useState('');
   const [activeMenu, setActiveMenu] = useState<PortalMenu>('overview');
   const [calendarMonth, setCalendarMonth] = useState(() => {
     const now = new Date();
@@ -102,6 +108,13 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
     end_date: new Date().toISOString().slice(0, 10),
     reason: '',
   });
+  const [reimbursementForm, setReimbursementForm] = useState({
+    category: 'Transport',
+    amount: 0,
+    expense_date: new Date().toISOString().slice(0, 10),
+    description: '',
+    receipt_url: '',
+  });
   const token = auth.getToken();
 
   const activeUsers = useMemo(() => users.filter((u) => u.is_active).length, [users]);
@@ -111,6 +124,7 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
       { id: 'overview', label: 'Overview' },
       { id: 'profile', label: 'Profile' },
       { id: 'leave', label: 'Leave' },
+      { id: 'reimburse', label: 'Reimburse' },
     ];
 
     if (canManageUsers) {
@@ -159,6 +173,14 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
     approved: leaveRequests.filter((request) => request.status === 'approved').length,
     declined: leaveRequests.filter((request) => request.status === 'declined').length,
   }), [leaveRequests]);
+  const reimbursementSummary = useMemo(() => ({
+    pending: reimbursementRequests.filter((request) => request.status === 'pending').length,
+    approved: reimbursementRequests.filter((request) => request.status === 'approved').length,
+    declined: reimbursementRequests.filter((request) => request.status === 'declined').length,
+    totalApproved: reimbursementRequests
+      .filter((request) => request.status === 'approved')
+      .reduce((sum, request) => sum + Number(request.amount || 0), 0),
+  }), [reimbursementRequests]);
 
   const resetForm = () => {
     setForm({
@@ -271,6 +293,25 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
     void loadLeaves();
   }, [token]);
 
+  const loadReimbursements = async () => {
+    if (!token) return;
+
+    try {
+      setReimbursementLoading(true);
+      setReimbursementError('');
+      const requests = await reimbursementsApi.listRequests(token);
+      setReimbursementRequests(requests);
+    } catch (err) {
+      setReimbursementError(err instanceof Error ? err.message : 'Gagal memuat data reimburse');
+    } finally {
+      setReimbursementLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadReimbursements();
+  }, [token]);
+
   const handleProfileUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!token || !currentUser.employee) return;
@@ -358,6 +399,62 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
       await loadLeaves();
     } catch (err) {
       setLeaveError(err instanceof Error ? err.message : 'Gagal memproses request cuti');
+    }
+  };
+
+  const handleCreateReimbursement = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!token) return;
+
+    try {
+      setReimbursementSubmitLoading(true);
+      setReimbursementError('');
+      setReimbursementMessage('');
+      await reimbursementsApi.createRequest(token, {
+        category: reimbursementForm.category,
+        amount: Number(reimbursementForm.amount),
+        expense_date: reimbursementForm.expense_date,
+        description: reimbursementForm.description,
+        receipt_url: reimbursementForm.receipt_url,
+      });
+      setReimbursementForm((prev) => ({
+        ...prev,
+        amount: 0,
+        description: '',
+        receipt_url: '',
+      }));
+      setReimbursementMessage('Request reimburse berhasil dibuat');
+      await loadReimbursements();
+    } catch (err) {
+      setReimbursementError(err instanceof Error ? err.message : 'Gagal membuat request reimburse');
+    } finally {
+      setReimbursementSubmitLoading(false);
+    }
+  };
+
+  const handleDecideReimbursement = async (requestId: string, status: 'approved' | 'declined') => {
+    if (!token) return;
+
+    const declineReason = status === 'declined'
+      ? window.prompt('Alasan penolakan') || ''
+      : '';
+
+    if (status === 'declined' && !declineReason.trim()) {
+      setReimbursementError('Alasan penolakan wajib diisi');
+      return;
+    }
+
+    try {
+      setReimbursementError('');
+      setReimbursementMessage('');
+      await reimbursementsApi.decideRequest(token, requestId, {
+        status,
+        decline_reason: declineReason,
+      });
+      setReimbursementMessage(status === 'approved' ? 'Request reimburse disetujui' : 'Request reimburse ditolak');
+      await loadReimbursements();
+    } catch (err) {
+      setReimbursementError(err instanceof Error ? err.message : 'Gagal memproses request reimburse');
     }
   };
 
@@ -508,6 +605,10 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
           <div className="summary-item">
             <span>Pending Leave</span>
             <strong>{leaveSummary.pending}</strong>
+          </div>
+          <div className="summary-item">
+            <span>Pending Reimburse</span>
+            <strong>{reimbursementSummary.pending}</strong>
           </div>
         </div>
       </section>
@@ -703,6 +804,142 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
                           Approve
                         </button>
                         <button type="button" className="danger-btn" onClick={() => handleDecideLeave(request.id, 'declined')}>
+                          Decline
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </section>
+      )}
+
+      {activeMenu === 'reimburse' && (
+      <section className="panel reimburse-panel">
+        <h3>Reimburse Management</h3>
+        <div className="section-head">
+          <p>{canReviewLeaves ? 'Review dan ajukan reimburse.' : 'Ajukan dan pantau reimburse Anda.'}</p>
+          <div className="leave-summary">
+            <span>Pending: {reimbursementSummary.pending}</span>
+            <span>Approved: {reimbursementSummary.approved}</span>
+            <span>Declined: {reimbursementSummary.declined}</span>
+            <span>Total Approved: Rp {reimbursementSummary.totalApproved.toLocaleString('id-ID')}</span>
+          </div>
+        </div>
+
+        {reimbursementError && <p className="inline-error">{reimbursementError}</p>}
+        {reimbursementMessage && <p className="inline-success">{reimbursementMessage}</p>}
+
+        {currentUser.employee ? (
+          <form className="reimburse-form crm-form" onSubmit={handleCreateReimbursement}>
+            <div className="form-row-three">
+              <div className="form-group">
+                <label>Kategori</label>
+                <select
+                  value={reimbursementForm.category}
+                  onChange={(e) => setReimbursementForm((prev) => ({ ...prev, category: e.target.value }))}
+                  disabled={reimbursementSubmitLoading}
+                >
+                  <option value="Transport">Transport</option>
+                  <option value="Meal">Meal</option>
+                  <option value="Medical">Medical</option>
+                  <option value="Office Supplies">Office Supplies</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label>Nominal</label>
+                <input
+                  type="number"
+                  min={0}
+                  value={reimbursementForm.amount}
+                  onChange={(e) => setReimbursementForm((prev) => ({ ...prev, amount: Number(e.target.value) }))}
+                  required
+                  disabled={reimbursementSubmitLoading}
+                />
+              </div>
+              <div className="form-group">
+                <label>Tanggal Pengeluaran</label>
+                <input
+                  type="date"
+                  value={reimbursementForm.expense_date}
+                  onChange={(e) => setReimbursementForm((prev) => ({ ...prev, expense_date: e.target.value }))}
+                  required
+                  disabled={reimbursementSubmitLoading}
+                />
+              </div>
+            </div>
+            <div className="form-row-two">
+              <div className="form-group">
+                <label>Deskripsi</label>
+                <input
+                  value={reimbursementForm.description}
+                  onChange={(e) => setReimbursementForm((prev) => ({ ...prev, description: e.target.value }))}
+                  placeholder="Contoh: Transport meeting client"
+                  disabled={reimbursementSubmitLoading}
+                />
+              </div>
+              <div className="form-group">
+                <label>Receipt URL</label>
+                <input
+                  value={reimbursementForm.receipt_url}
+                  onChange={(e) => setReimbursementForm((prev) => ({ ...prev, receipt_url: e.target.value }))}
+                  placeholder="Link bukti pembayaran"
+                  disabled={reimbursementSubmitLoading}
+                />
+              </div>
+            </div>
+            <div className="form-actions compact-actions">
+              <button type="submit" disabled={reimbursementSubmitLoading} className="primary-btn">
+                {reimbursementSubmitLoading ? 'Mengirim...' : 'Ajukan Reimburse'}
+              </button>
+            </div>
+          </form>
+        ) : (
+          <p>Data employee belum tersedia untuk mengajukan reimburse.</p>
+        )}
+
+        <div className="reimburse-list">
+          {reimbursementLoading ? (
+            <p>Memuat data reimburse...</p>
+          ) : reimbursementRequests.length === 0 ? (
+            <p>Belum ada request reimburse.</p>
+          ) : (
+            reimbursementRequests.map((request) => {
+              const isOwnRequest = request.employee_id === currentUser.employee?.id;
+              const canDecide = canReviewLeaves && !isOwnRequest && request.status === 'pending';
+
+              return (
+                <div key={request.id} className="reimburse-item">
+                  <div>
+                    <strong>{request.employee?.full_name || employeeName}</strong>
+                    <p>
+                      {request.category} | Rp {Number(request.amount || 0).toLocaleString('id-ID')} |
+                      {' '}{request.expense_date}
+                    </p>
+                    {request.description && <p>Deskripsi: {request.description}</p>}
+                    {request.receipt_url && <p>Bukti: {request.receipt_url}</p>}
+                    {request.decline_reason && <p>Ditolak: {request.decline_reason}</p>}
+                  </div>
+                  <div className="reimburse-actions">
+                    <span className={`status-pill status-${request.status}`}>{request.status.toUpperCase()}</span>
+                    {canDecide && (
+                      <>
+                        <button
+                          type="button"
+                          className="primary-btn"
+                          onClick={() => handleDecideReimbursement(request.id, 'approved')}
+                        >
+                          Approve
+                        </button>
+                        <button
+                          type="button"
+                          className="danger-btn"
+                          onClick={() => handleDecideReimbursement(request.id, 'declined')}
+                        >
                           Decline
                         </button>
                       </>

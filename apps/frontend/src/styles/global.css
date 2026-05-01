@@ -262,7 +262,7 @@ form {
 
 .summary-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 12px;
 }
 
@@ -304,6 +304,14 @@ form {
 }
 
 .leave-form {
+  margin-top: 12px;
+}
+
+.reimburse-panel {
+  margin-top: 14px;
+}
+
+.reimburse-form {
   margin-top: 12px;
 }
 
@@ -354,6 +362,13 @@ form {
 }
 
 .leave-list {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.reimburse-list {
   margin-top: 14px;
   display: flex;
   flex-direction: column;
@@ -474,6 +489,16 @@ form {
   gap: 12px;
 }
 
+.reimburse-item {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
 .user-item p {
   margin: 4px 0 0;
   font-size: 13px;
@@ -486,6 +511,13 @@ form {
   color: var(--text-soft);
 }
 
+.reimburse-item p {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--text-soft);
+  overflow-wrap: anywhere;
+}
+
 .user-actions {
   display: flex;
   gap: 8px;
@@ -493,6 +525,13 @@ form {
 }
 
 .leave-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.reimburse-actions {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
@@ -834,11 +873,21 @@ form {
     align-items: start;
   }
 
+  .reimburse-item {
+    flex-direction: column;
+    align-items: start;
+  }
+
   .user-actions {
     width: 100%;
   }
 
   .leave-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .reimburse-actions {
     width: 100%;
     justify-content: flex-start;
   }
