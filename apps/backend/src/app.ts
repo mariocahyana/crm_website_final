@@ -8,6 +8,7 @@ import usersRoutes from './routes/users.routes';
 import leaveRoutes from './routes/leave.routes';
 import reimbursementRoutes from './routes/reimbursement.routes';
 import payrollRoutes from './routes/payroll.routes';
+import attendanceRoutes from './routes/attendance.routes';
 import { errorHandler } from './middlewares/errorHandler';
 
 const app = express();
@@ -31,6 +32,7 @@ app.use('/api/users', usersRoutes);
 app.use('/api/leaves', leaveRoutes);
 app.use('/api/reimbursements', reimbursementRoutes);
 app.use('/api/payroll', payrollRoutes);
+app.use('/api/attendance', attendanceRoutes);
 
 // Error handler MUST be last
 app.use(errorHandler);

@@ -41,6 +41,14 @@ export default function QrTokenModel(sequelize: any) {
       type: DataTypes.UUID,
       allowNull: false,
     },
+    scanned_by: {
+      type: DataTypes.UUID,
+      allowNull: true,
+    },
+    scanned_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
   }, {
     sequelize,
     modelName: 'QrToken',
@@ -53,6 +61,7 @@ export default function QrTokenModel(sequelize: any) {
       valid: {
         where: {
           is_used: false,
+          scanned_by: null,
           expires_at: { [Op.gt]: new Date() },
         },
       },

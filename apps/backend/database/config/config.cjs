@@ -3,7 +3,7 @@ require('dotenv').config();
 module.exports = {
   development: {
     username: process.env.DB_USER || 'postgres',
-    password: process.env.DB_PASS || '0810',
+    password: process.env.DB_PASS || 'postgres',
     database: process.env.DB_NAME || 'tubes_rpll',
     host: process.env.DB_HOST || '127.0.0.1',
     port: Number(process.env.DB_PORT) || 5433,
@@ -11,7 +11,7 @@ module.exports = {
   },
   test: {
     username: process.env.DB_USER || 'postgres',
-    password: process.env.DB_PASS || null,
+    password: process.env.DB_PASS || 'postgres',
     database: process.env.DB_NAME || 'database_test',
     host: process.env.DB_HOST || '127.0.0.1',
     port: Number(process.env.DB_PORT) || 5433,
@@ -19,7 +19,7 @@ module.exports = {
   },
   production: {
     username: process.env.DB_USER || 'postgres',
-    password: process.env.DB_PASS || null,
+    password: process.env.DB_PASS || 'postgres',
     database: process.env.DB_NAME || 'database_production',
     host: process.env.DB_HOST || '127.0.0.1',
     port: Number(process.env.DB_PORT) || 5433,

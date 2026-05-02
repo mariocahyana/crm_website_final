@@ -162,6 +162,36 @@ form {
   font-weight: 500;
 }
 
+.alert-info {
+  padding: 10px 12px;
+  border-radius: 10px;
+  margin-bottom: 14px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #1d4ed8;
+  font-weight: 500;
+}
+
+.toast {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 50;
+  min-width: 220px;
+  max-width: min(92vw, 360px);
+  padding: 12px 14px;
+  border-radius: 14px;
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.18);
+  backdrop-filter: blur(10px);
+  animation: toast-in 180ms ease-out;
+}
+
+.toast-success {
+  background: rgba(236, 253, 245, 0.98);
+  border: 1px solid #86efac;
+  color: #166534;
+}
+
 .token-box {
   margin-bottom: 14px;
   padding: 12px;
@@ -311,28 +341,6 @@ form {
   margin-top: 14px;
 }
 
-.payroll-panel {
-  margin-top: 14px;
-}
-
-.payroll-preview-table {
-  margin-top: 16px;
-  padding: 14px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: #f8fafc;
-}
-
-.payroll-preview-table h4 {
-  margin: 0 0 10px;
-}
-
-.payroll-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
 .reimburse-form {
   margin-top: 12px;
 }
@@ -395,6 +403,130 @@ form {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.qr-layout {
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: center;
+  align-items: center;
+}
+
+.qr-card {
+  width: min(100%, 420px);
+  padding: 18px;
+  border-radius: 20px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  border: 1px solid var(--line);
+  display: grid;
+  place-items: center;
+  gap: 12px;
+}
+
+.qr-code-image {
+  width: min(100%, 260px);
+  height: auto;
+  display: block;
+  border-radius: 14px;
+  background: #fff;
+}
+
+.qr-card-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+  text-align: center;
+}
+
+.qr-card-pill {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #e0f2fe;
+  color: #075985;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.qr-card-meta strong {
+  color: #0f172a;
+  font-size: 16px;
+}
+
+.qr-card-note {
+  margin: 0;
+  text-align: center;
+  max-width: 320px;
+}
+
+.scanner-card {
+  margin-top: 14px;
+  padding: 20px;
+  border-radius: 24px;
+  border: 1px solid var(--line);
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.04);
+}
+
+.scanner-preview-wrap {
+  position: relative;
+  width: min(100%, 560px);
+  aspect-ratio: 1 / 1;
+  margin: 0 auto;
+  overflow: hidden;
+  border-radius: 28px;
+  border: 1px solid var(--line);
+  background: #0f172a;
+}
+
+.scanner-preview {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.scanner-frame {
+  position: absolute;
+  inset: 12%;
+  border: 2px solid rgba(255, 255, 255, 0.92);
+  border-radius: 26px;
+  box-shadow: 0 0 0 9999px rgba(15, 23, 42, 0.18);
+  pointer-events: none;
+}
+
+.scanner-hint {
+  margin-top: 14px;
+  display: flex;
+  justify-content: center;
+  text-align: center;
+}
+
+.scanner-hint p {
+  margin: 0;
+  color: var(--text-soft);
+  max-width: 480px;
+}
+
+.scanner-actions {
+  margin-top: 16px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+@keyframes toast-in {
+  from {
+    transform: translateY(10px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
 }
 
 .calendar-panel {
@@ -538,6 +670,41 @@ form {
   font-size: 13px;
   color: var(--text-soft);
   overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+  .qr-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .section-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .portal-nav {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .menu-tabs {
+    display: none;
+  }
+
+  .menu-select-wrap {
+    display: block;
+  }
+
+  .user-form {
+    grid-template-columns: 1fr;
+  }
+
+  .user-item,
+  .leave-item,
+  .reimburse-item {
+    flex-direction: column;
+    align-items: flex-start;
+  }
 }
 
 .user-actions {
