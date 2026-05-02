@@ -12,10 +12,13 @@ export async function updateMyProfile(req: Request, res: Response, next: NextFun
     }
 
     const clientIp = req.ip || 'unknown';
+    const photoFile = req.file;
+    
     const result = await ProfileService.updateMyProfile(
       userId,
       employeeId,
       req.body,
+      photoFile,
       clientIp
     );
 
@@ -30,6 +33,7 @@ export async function updateAnyProfile(req: Request, res: Response, next: NextFu
     const userId = req.authUser?.id;
     const { employeeId } = req.params as { employeeId: string };
     const clientIp = req.ip || 'unknown';
+    const photoFile = req.file;
 
     if (!userId) {
       return sendError(res, 'Not authenticated', 401, 'UNAUTHORIZED');
@@ -39,6 +43,7 @@ export async function updateAnyProfile(req: Request, res: Response, next: NextFu
       userId,
       employeeId,
       req.body,
+      photoFile,
       clientIp
     );
 

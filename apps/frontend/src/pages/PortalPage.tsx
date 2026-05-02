@@ -5,6 +5,7 @@ import { attendanceApi, type AdminAttendanceQrCode } from '../services/attendanc
 import { AttendanceScanner } from '../components/AttendanceScanner';
 import { leavesApi, type LeaveRequest, type LeaveType } from '../services/leaves';
 import { profileApi } from '../services/profile';
+import { payrollApi, type PayrollPeriod, type PayrollPreviewResponse, type PayrollPayslip, type PayrollPayslipDetailResponse } from '../services/payroll';
 import { reimbursementsApi, type ReimbursementRequest } from '../services/reimbursements';
 import { usersApi, type ManagedUser, type UserManagementOptions } from '../services/users';
 
@@ -20,6 +21,8 @@ interface SessionUser {
     phone: string;
     address: string;
     photo_url: string | null;
+    join_date?: string;
+    job_title?: string;
   } | null;
 }
 
@@ -34,6 +37,7 @@ type PortalMenu = 'overview' | 'profile' | 'leave' | 'reimburse' | 'users' | 'at
 interface AttendanceQrView extends AdminAttendanceQrCode {
   qrDataUrl: string;
 }
+type PortalMenu = 'overview' | 'profile' | 'leave' | 'reimburse' | 'users' | 'payroll' | 'my-payroll';
 
 const monthFormatter = new Intl.DateTimeFormat('id-ID', {
   month: 'long',
@@ -53,6 +57,7 @@ function isDateWithinRange(dateKey: string, startDate: string, endDate: string) 
 }
 
 export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPageProps) {
+  const defaultProfilePhoto = '/images/default-profile.svg';
   const portalType = currentUser.user.role === 'admin'
     ? 'Admin'
     : currentUser.user.role === 'manager'
@@ -61,6 +66,8 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
   const canManageUsers = currentUser.user.role === 'admin';
   const canManageAttendanceQr = currentUser.user.role === 'admin';
   const canScanAttendance = currentUser.user.role === 'staff' || currentUser.user.role === 'manager';
+  const canManagePayroll = currentUser.user.role === 'admin';
+  const canViewMyPayroll = Boolean(currentUser.employee);
   const employeeName = currentUser.employee?.full_name || 'User';
   const [users, setUsers] = useState<ManagedUser[]>([]);
   const [usersLoading, setUsersLoading] = useState(false);
@@ -83,6 +90,29 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
   const [attendanceQr, setAttendanceQr] = useState<AttendanceQrView | null>(null);
   const [attendanceQrLoading, setAttendanceQrLoading] = useState(false);
   const [attendanceQrError, setAttendanceQrError] = useState('');
+  const [payrollPeriods, setPayrollPeriods] = useState<PayrollPeriod[]>([]);
+  const [payrollPreview, setPayrollPreview] = useState<PayrollPreviewResponse | null>(null);
+  const [payrollPayslips, setPayrollPayslips] = useState<PayrollPayslip[]>([]);
+  const [selectedPayrollPeriodId, setSelectedPayrollPeriodId] = useState('');
+  const [payrollLoading, setPayrollLoading] = useState(false);
+  const [payrollActionLoading, setPayrollActionLoading] = useState(false);
+  const [payrollError, setPayrollError] = useState('');
+  const [payrollMessage, setPayrollMessage] = useState('');
+  const [myPayrollPayslips, setMyPayrollPayslips] = useState<PayrollPayslip[]>([]);
+  const [myPayrollDetail, setMyPayrollDetail] = useState<PayrollPayslipDetailResponse | null>(null);
+  const [myPayrollLoading, setMyPayrollLoading] = useState(false);
+  const [myPayrollError, setMyPayrollError] = useState('');
+  const [selectedMyPayslipId, setSelectedMyPayslipId] = useState('');
+  const [periodForm, setPeriodForm] = useState({
+    month: new Date().getMonth() + 1,
+    year: new Date().getFullYear(),
+  });
+  const [manualItemForm, setManualItemForm] = useState({
+    payslip_id: '',
+    type: 'incentive' as 'incentive' | 'penalty' | 'bonus',
+    amount: 0,
+    description: '',
+  });
   const [activeMenu, setActiveMenu] = useState<PortalMenu>('overview');
   const [calendarMonth, setCalendarMonth] = useState(() => {
     const now = new Date();
@@ -111,8 +141,11 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
   });
   const [createdEmployeeNumber, setCreatedEmployeeNumber] = useState<string>('');
   const [profileForm, setProfileForm] = useState({
+    full_name: currentUser.employee?.full_name || '',
     phone: currentUser.employee?.phone || '',
     address: currentUser.employee?.address || '',
+    photo_file: null as File | null,
+    photo_deleted: false,
   });
   const [leaveForm, setLeaveForm] = useState({
     leave_type_id: '',
@@ -125,9 +158,187 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
     amount: 0,
     expense_date: new Date().toISOString().slice(0, 10),
     description: '',
-    receipt_url: '',
+    receipt_file: null as File | null,
   });
+  const [photoModalOpen, setPhotoModalOpen] = useState(false);
+  const [selectedPhotoUrl, setSelectedPhotoUrl] = useState<string | null>(null);
+  const [receiptPreviewUrl, setReceiptPreviewUrl] = useState<string | null>(null);
+  const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null);
+  const receiptInputRef = useRef<HTMLInputElement | null>(null);
+  const photoInputRef = useRef<HTMLInputElement | null>(null);
   const token = auth.getToken();
+
+  const getDefaultProfileForm = () => ({
+    full_name: currentUser.employee?.full_name || '',
+    phone: currentUser.employee?.phone || '',
+    address: currentUser.employee?.address || '',
+    photo_file: null as File | null,
+    photo_deleted: false,
+  });
+
+  const getDefaultLeaveForm = () => ({
+    leave_type_id: leaveTypes[0]?.id || '',
+    start_date: new Date().toISOString().slice(0, 10),
+    end_date: new Date().toISOString().slice(0, 10),
+    reason: '',
+  });
+
+  const getDefaultReimbursementForm = () => ({
+    category: 'Transport',
+    amount: 0,
+    expense_date: new Date().toISOString().slice(0, 10),
+    description: '',
+    receipt_file: null as File | null,
+  });
+
+  const getDefaultUserForm = () => ({
+    full_name: '',
+    email: '',
+    password: '',
+    role: 'staff' as 'admin' | 'staff' | 'manager',
+    join_date: new Date().toISOString().slice(0, 10),
+    base_salary: 0,
+    job_title: '',
+    phone: '',
+    address: '',
+    department_id: '',
+    manager_id: '',
+  });
+
+  const handleViewPhoto = (receiptUrl: string | null) => {
+    if (receiptUrl) {
+      let fullUrl: string;
+      
+      if (receiptUrl.startsWith('http')) {
+        fullUrl = receiptUrl;
+      } else {
+        // receiptUrl format: /uploads/filename
+        const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
+        const baseUrl = apiBase.replace('/api', ''); // Remove /api to get http://localhost:5000
+        fullUrl = baseUrl + receiptUrl;
+      }
+      
+      console.log('Opening photo:', fullUrl); // Debug
+      setSelectedPhotoUrl(fullUrl);
+      setPhotoModalOpen(true);
+    }
+  };
+
+  const getFullPhotoUrl = (photoUrl: string | null | undefined): string | null => {
+    if (!photoUrl) return null;
+    
+    if (photoUrl.startsWith('http')) {
+      return photoUrl;
+    } else {
+      // photoUrl format: /uploads/filename
+      const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
+      const baseUrl = apiBase.replace('/api', ''); // Remove /api to get http://localhost:5000
+      return baseUrl + photoUrl;
+    }
+  };
+
+  const currentProfilePhotoSrc = profileForm.photo_deleted
+    ? defaultProfilePhoto
+    : getFullPhotoUrl(currentUser.employee?.photo_url) ?? defaultProfilePhoto;
+
+  const headerProfilePhotoSrc = getFullPhotoUrl(currentUser.employee?.photo_url) ?? defaultProfilePhoto;
+
+  const handleClosePhotoModal = () => {
+    setPhotoModalOpen(false);
+    setSelectedPhotoUrl(null);
+  };
+
+  const handleReceiptFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] || null;
+
+    setReimbursementForm((prev) => ({ ...prev, receipt_file: file }));
+
+    // revoke previous preview URL if any
+    if (receiptPreviewUrl) {
+      try { URL.revokeObjectURL(receiptPreviewUrl); } catch {}
+      setReceiptPreviewUrl(null);
+    }
+
+    if (file) {
+      const objUrl = URL.createObjectURL(file);
+      setReceiptPreviewUrl(objUrl);
+    }
+  };
+
+  const handlePhotoFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] || null;
+
+    setProfileForm((prev) => ({ ...prev, photo_file: file }));
+
+    // revoke previous preview URL if any
+    if (photoPreviewUrl) {
+      try { URL.revokeObjectURL(photoPreviewUrl); } catch {}
+      setPhotoPreviewUrl(null);
+    }
+
+    if (file) {
+      const objUrl = URL.createObjectURL(file);
+      setPhotoPreviewUrl(objUrl);
+    }
+  };
+
+  const resetProfileDraft = () => {
+    if (photoPreviewUrl) {
+      try { URL.revokeObjectURL(photoPreviewUrl); } catch {}
+    }
+
+    setProfileForm({
+      full_name: currentUser.employee?.full_name || '',
+      phone: currentUser.employee?.phone || '',
+      address: currentUser.employee?.address || '',
+      photo_file: null,
+      photo_deleted: false,
+    });
+
+    if (photoInputRef.current) {
+      try { photoInputRef.current.value = ''; } catch {}
+    }
+
+    setPhotoPreviewUrl(null);
+    setProfileError('');
+    setProfileMessage('');
+  };
+
+  const handleMenuChange = (nextMenu: PortalMenu) => {
+    if (activeMenu === 'profile' && nextMenu !== 'profile') {
+      resetProfileDraft();
+    }
+
+    if (activeMenu === 'leave' && nextMenu !== 'leave') {
+      setLeaveForm(getDefaultLeaveForm());
+      setLeaveError('');
+      setLeaveMessage('');
+    }
+
+    if (activeMenu === 'reimburse' && nextMenu !== 'reimburse') {
+      if (receiptPreviewUrl) {
+        try { URL.revokeObjectURL(receiptPreviewUrl); } catch {}
+      }
+
+      setReimbursementForm(getDefaultReimbursementForm());
+      setReimbursementError('');
+      setReimbursementMessage('');
+      setReceiptPreviewUrl(null);
+      if (receiptInputRef.current) {
+        try { receiptInputRef.current.value = ''; } catch {}
+      }
+    }
+
+    if (activeMenu === 'users' && nextMenu !== 'users') {
+      resetForm();
+      setEditingUserId(null);
+      setEditingEmployeeId(null);
+      setCreatedEmployeeNumber('');
+      setUsersError('');
+    }
+
+    setActiveMenu(nextMenu);
+  };
 
   const activeUsers = useMemo(() => users.filter((u) => u.is_active).length, [users]);
   const canReviewLeaves = currentUser.user.role === 'admin' || currentUser.user.role === 'manager';
@@ -153,6 +364,16 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
 
     return menus;
   }, [canManageUsers, canManageAttendanceQr, canScanAttendance]);
+    if (canManagePayroll) {
+      menus.push({ id: 'payroll', label: 'Payroll' });
+    }
+
+    if (canViewMyPayroll) {
+      menus.push({ id: 'my-payroll', label: 'Payslip Saya' });
+    }
+
+    return menus;
+  }, [canManageUsers, canManagePayroll, canViewMyPayroll]);
 
   const calendarDays = useMemo(() => {
     const year = calendarMonth.getFullYear();
@@ -280,11 +501,25 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
   }, [canManageUsers, token]);
 
   useEffect(() => {
-    setProfileForm({
-      phone: currentUser.employee?.phone || '',
-      address: currentUser.employee?.address || '',
-    });
-  }, [currentUser.employee?.phone, currentUser.employee?.address]);
+    setProfileForm(getDefaultProfileForm());
+    // Reset photo preview when user changes
+    if (photoPreviewUrl) {
+      try { URL.revokeObjectURL(photoPreviewUrl); } catch {}
+      setPhotoPreviewUrl(null);
+    }
+  }, [
+    currentUser.employee?.full_name,
+    currentUser.employee?.phone,
+    currentUser.employee?.address,
+    currentUser.employee?.photo_url,
+  ]);
+
+  useEffect(() => {
+    setLeaveForm((current) => ({
+      ...current,
+      leave_type_id: current.leave_type_id || leaveTypes[0]?.id || '',
+    }));
+  }, [leaveTypes]);
 
   const loadLeaves = async () => {
     if (!token) return;
@@ -367,6 +602,21 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
       setAttendanceQrError(err instanceof Error ? err.message : 'Gagal memuat QR absensi');
     } finally {
       setAttendanceQrLoading(false);
+  const loadPayrollPeriods = async () => {
+    if (!token || !canManagePayroll) return;
+
+    try {
+      setPayrollLoading(true);
+      setPayrollError('');
+      const periods = await payrollApi.listPeriods(token);
+      setPayrollPeriods(periods);
+      if (!selectedPayrollPeriodId && periods.length > 0) {
+        setSelectedPayrollPeriodId(periods[0].id);
+      }
+    } catch (err) {
+      setPayrollError(err instanceof Error ? err.message : 'Gagal memuat payroll periods');
+    } finally {
+      setPayrollLoading(false);
     }
   };
 
@@ -377,6 +627,164 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
 
     void loadAttendanceQr();
   }, [activeMenu, canManageAttendanceQr, token]);
+    void loadPayrollPeriods();
+  }, [token, canManagePayroll]);
+
+  const loadMyPayrollPayslips = async () => {
+    if (!token || !canViewMyPayroll) return;
+
+    try {
+      setMyPayrollLoading(true);
+      setMyPayrollError('');
+      const payslips = await payrollApi.listMyPayslips(token);
+      setMyPayrollPayslips(payslips);
+      if (!selectedMyPayslipId && payslips.length > 0) {
+        setSelectedMyPayslipId(payslips[0].id);
+      }
+      if (payslips.length === 0) {
+        setMyPayrollDetail(null);
+      }
+    } catch (err) {
+      setMyPayrollError(err instanceof Error ? err.message : 'Gagal memuat payslip saya');
+    } finally {
+      setMyPayrollLoading(false);
+    }
+  };
+
+  const loadMyPayrollDetail = async (payslipId: string) => {
+    if (!token || !payslipId || !canViewMyPayroll) return;
+
+    try {
+      setMyPayrollLoading(true);
+      setMyPayrollError('');
+      const detail = await payrollApi.getMyPayslipDetail(token, payslipId);
+      setMyPayrollDetail(detail);
+    } catch (err) {
+      setMyPayrollError(err instanceof Error ? err.message : 'Gagal memuat detail payslip saya');
+    } finally {
+      setMyPayrollLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeMenu !== 'my-payroll') return;
+    void loadMyPayrollPayslips();
+  }, [activeMenu, token, canViewMyPayroll]);
+
+  useEffect(() => {
+    if (activeMenu !== 'my-payroll' || !selectedMyPayslipId) return;
+    void loadMyPayrollDetail(selectedMyPayslipId);
+  }, [activeMenu, selectedMyPayslipId, token, canViewMyPayroll]);
+
+  useEffect(() => {
+    if (!selectedPayrollPeriodId) {
+      setPayrollPayslips([]);
+      return;
+    }
+
+    void loadPayrollPayslips(selectedPayrollPeriodId);
+  }, [selectedPayrollPeriodId, token]);
+
+  const handleCreatePayrollPeriod = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!token || !canManagePayroll) return;
+
+    try {
+      setPayrollActionLoading(true);
+      setPayrollError('');
+      setPayrollMessage('');
+      const period = await payrollApi.createPeriod(token, periodForm.month, periodForm.year);
+      setPayrollMessage('Payroll period berhasil dibuat');
+      setSelectedPayrollPeriodId(period.id);
+      await loadPayrollPeriods();
+    } catch (err) {
+      setPayrollError(err instanceof Error ? err.message : 'Gagal membuat payroll period');
+    } finally {
+      setPayrollActionLoading(false);
+    }
+  };
+
+  const handlePreviewPayroll = async () => {
+    if (!token || !selectedPayrollPeriodId) return;
+    try {
+      setPayrollActionLoading(true);
+      setPayrollError('');
+      const preview = await payrollApi.previewPeriod(token, selectedPayrollPeriodId);
+      setPayrollPreview(preview);
+      setPayrollMessage('Preview payroll berhasil dibuat');
+    } catch (err) {
+      setPayrollError(err instanceof Error ? err.message : 'Gagal preview payroll');
+    } finally {
+      setPayrollActionLoading(false);
+    }
+  };
+
+  const loadPayrollPayslips = async (periodId: string) => {
+    if (!token || !periodId) return;
+    try {
+      const payslips = await payrollApi.listPayslips(token, periodId);
+      setPayrollPayslips(payslips);
+      if (!manualItemForm.payslip_id && payslips.length > 0) {
+        setManualItemForm((prev) => ({ ...prev, payslip_id: payslips[0].id }));
+      }
+    } catch (err) {
+      setPayrollError(err instanceof Error ? err.message : 'Gagal memuat payslips');
+    }
+  };
+
+  const handleGeneratePayroll = async () => {
+    if (!token || !selectedPayrollPeriodId) return;
+    try {
+      setPayrollActionLoading(true);
+      setPayrollError('');
+      setPayrollMessage('');
+      await payrollApi.generatePeriod(token, selectedPayrollPeriodId);
+      await loadPayrollPayslips(selectedPayrollPeriodId);
+      setPayrollMessage('Generate payslips berhasil');
+    } catch (err) {
+      setPayrollError(err instanceof Error ? err.message : 'Gagal generate payslips');
+    } finally {
+      setPayrollActionLoading(false);
+    }
+  };
+
+  const handleFinalizePayroll = async () => {
+    if (!token || !selectedPayrollPeriodId) return;
+    try {
+      setPayrollActionLoading(true);
+      setPayrollError('');
+      setPayrollMessage('');
+      await payrollApi.finalizePeriod(token, selectedPayrollPeriodId);
+      await loadPayrollPeriods();
+      setPayrollMessage('Payroll period berhasil difinalisasi');
+    } catch (err) {
+      setPayrollError(err instanceof Error ? err.message : 'Gagal finalize payroll period');
+    } finally {
+      setPayrollActionLoading(false);
+    }
+  };
+
+  const handleAddManualPayrollItem = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!token || !manualItemForm.payslip_id) return;
+    try {
+      setPayrollActionLoading(true);
+      setPayrollError('');
+      setPayrollMessage('');
+      await payrollApi.addManualItem(token, manualItemForm.payslip_id, {
+        type: manualItemForm.type,
+        amount: Number(manualItemForm.amount),
+        description: manualItemForm.description,
+      });
+      setManualItemForm((prev) => ({ ...prev, amount: 0, description: '' }));
+      await loadPayrollPayslips(selectedPayrollPeriodId);
+      setPayrollMessage('Item manual berhasil ditambahkan');
+    } catch (err) {
+      setPayrollError(err instanceof Error ? err.message : 'Gagal menambah item manual');
+    } finally {
+      setPayrollActionLoading(false);
+    }
+  };
 
   const handleProfileUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -387,15 +795,31 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
       setProfileError('');
       setProfileMessage('');
       const employee = await profileApi.updateMyProfile(token, {
+        full_name: profileForm.full_name,
         phone: profileForm.phone,
         address: profileForm.address,
+        photo_file: profileForm.photo_file || undefined,
+        photo_deleted: profileForm.photo_deleted,
       });
 
       onEmployeeUpdate({
         ...currentUser.employee,
+        full_name: employee.full_name || '',
         phone: employee.phone || '',
         address: employee.address || '',
+        photo_url: employee.photo_url || null,
       });
+      
+      // Reset photo file and preview after successful update
+      setProfileForm((prev) => ({ ...prev, photo_file: null, photo_deleted: false }));
+      if (photoInputRef.current) {
+        try { photoInputRef.current.value = ''; } catch {}
+      }
+      if (photoPreviewUrl) {
+        try { URL.revokeObjectURL(photoPreviewUrl); } catch {}
+        setPhotoPreviewUrl(null);
+      }
+      
       setProfileMessage('Profile berhasil diperbarui');
     } catch (err) {
       setProfileError(err instanceof Error ? err.message : 'Gagal memperbarui profile');
@@ -481,14 +905,22 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
         amount: Number(reimbursementForm.amount),
         expense_date: reimbursementForm.expense_date,
         description: reimbursementForm.description,
-        receipt_url: reimbursementForm.receipt_url,
+        receipt_file: reimbursementForm.receipt_file,
       });
       setReimbursementForm((prev) => ({
         ...prev,
         amount: 0,
         description: '',
-        receipt_url: '',
+        receipt_file: null,
       }));
+        // clean up preview URL
+        if (receiptPreviewUrl) {
+          try { URL.revokeObjectURL(receiptPreviewUrl); } catch {}
+          setReceiptPreviewUrl(null);
+        }
+        if (receiptInputRef && receiptInputRef.current) {
+          try { receiptInputRef.current.value = ''; } catch {}
+        }
       setReimbursementMessage('Request reimburse berhasil dibuat');
       await loadReimbursements();
     } catch (err) {
@@ -624,9 +1056,39 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
           <h1>Selamat datang, {employeeName}</h1>
           <p className="subtext">Anda sudah login.</p>
         </div>
-        <button onClick={onLogout} className="danger-btn">
-          Logout
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <button onClick={onLogout} className="danger-btn">
+            Logout
+          </button>
+          <button
+            type="button"
+            onClick={() => handleMenuChange('profile')}
+            title="Buka Profile"
+            aria-label="Buka Profile"
+            style={{
+              border: 'none',
+              background: 'transparent',
+              padding: 0,
+              cursor: 'pointer',
+              width: 44,
+              height: 44,
+              borderRadius: 8,
+            }}
+          >
+            <img
+              src={headerProfilePhotoSrc}
+              alt="Foto profil user"
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: 8,
+                objectFit: 'cover',
+                border: '2px solid #d1d5db',
+                display: 'block',
+              }}
+            />
+          </button>
+        </div>
       </header>
 
       <nav className="portal-nav" aria-label="Portal menu">
@@ -636,7 +1098,7 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
               key={menu.id}
               type="button"
               className={activeMenu === menu.id ? 'menu-tab active' : 'menu-tab'}
-              onClick={() => setActiveMenu(menu.id)}
+              onClick={() => handleMenuChange(menu.id)}
             >
               {menu.label}
             </button>
@@ -647,7 +1109,7 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
           <select
             id="portal-menu"
             value={activeMenu}
-            onChange={(e) => setActiveMenu(e.target.value as PortalMenu)}
+            onChange={(e) => handleMenuChange(e.target.value as PortalMenu)}
           >
             {portalMenus.map((menu) => (
               <option key={menu.id} value={menu.id}>{menu.label}</option>
@@ -692,7 +1154,106 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
             {profileError && <p className="inline-error">{profileError}</p>}
             {profileMessage && <p className="inline-success">{profileMessage}</p>}
 
+            {/* Photo Section */}
+            <div className="form-group" style={{ marginBottom: 20 }}>
+              <label>Foto Profile</label>
+              <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                {/* Current Photo */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <img
+                    src={currentProfilePhotoSrc}
+                    alt="Current profile photo"
+                    style={{
+                      width: 140,
+                      height: 140,
+                      borderRadius: 8,
+                      objectFit: 'cover',
+                      border: '2px solid #ddd',
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="secondary-btn"
+                    onClick={() => {
+                      setProfileForm((prev) => ({ ...prev, photo_deleted: true }));
+                    }}
+                    style={{ marginTop: 8, width: '100%' }}
+                  >
+                    Hapus Foto
+                  </button>
+                </div>
+
+                {/* Preview Photo */}
+                {photoPreviewUrl && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <div style={{ fontSize: 12, fontWeight: 500, color: '#666' }}>Preview Foto Baru</div>
+                    <div>
+                      <img
+                        src={photoPreviewUrl}
+                        alt="Preview new photo"
+                        style={{
+                          width: 140,
+                          height: 140,
+                          borderRadius: 8,
+                          objectFit: 'cover',
+                          border: '2px solid #4CAF50',
+                        }}
+                      />
+                      <button
+                        type="button"
+                        className="secondary-btn"
+                        onClick={() => {
+                          try { if (photoPreviewUrl) URL.revokeObjectURL(photoPreviewUrl); } catch {}
+                          setPhotoPreviewUrl(null);
+                          setProfileForm((prev) => ({ ...prev, photo_file: null }));
+                          if (photoInputRef.current) {
+                            try { photoInputRef.current.value = ''; } catch {}
+                          }
+                        }}
+                        style={{ marginTop: 8, width: '100%' }}
+                      >
+                        Batal
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Upload Section */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, justifyContent: 'center' }}>
+                  <div style={{ fontSize: 12, fontWeight: 500, color: '#666' }}>Upload Foto Baru</div>
+                  <input
+                    ref={photoInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handlePhotoFileChange}
+                    disabled={profileLoading}
+                    style={{
+                      display: 'none',
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="primary-btn"
+                    onClick={() => photoInputRef.current?.click()}
+                    disabled={profileLoading}
+                  >
+                    Pilih Foto
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Editable Fields */}
             <div className="form-row-two">
+              <div className="form-group">
+                <label>Nama Lengkap</label>
+                <input
+                  value={profileForm.full_name}
+                  onChange={(e) => setProfileForm((prev) => ({ ...prev, full_name: e.target.value }))}
+                  placeholder="Nama lengkap"
+                  disabled={profileLoading}
+                />
+              </div>
               <div className="form-group">
                 <label>Nomor Telepon</label>
                 <input
@@ -702,6 +1263,9 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
                   disabled={profileLoading}
                 />
               </div>
+            </div>
+
+            <div className="form-row-two">
               <div className="form-group">
                 <label>Alamat</label>
                 <input
@@ -709,6 +1273,28 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
                   onChange={(e) => setProfileForm((prev) => ({ ...prev, address: e.target.value }))}
                   placeholder="Alamat"
                   disabled={profileLoading}
+                />
+              </div>
+            </div>
+
+            {/* Read-only Fields */}
+            <div className="form-row-two">
+              <div className="form-group">
+                <label>Tanggal Bergabung</label>
+                <input
+                  type="text"
+                  value={currentUser.employee.join_date ? new Date(currentUser.employee.join_date).toLocaleDateString('id-ID') : '-'}
+                  disabled={true}
+                  style={{ backgroundColor: '#f5f5f5' }}
+                />
+              </div>
+              <div className="form-group">
+                <label>Jabatan</label>
+                <input
+                  type="text"
+                  value={currentUser.employee.job_title || '-'}
+                  disabled={true}
+                  style={{ backgroundColor: '#f5f5f5' }}
                 />
               </div>
             </div>
@@ -953,13 +1539,37 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
                 />
               </div>
               <div className="form-group">
-                <label>Receipt URL</label>
+                <label>Upload Foto Struk/Bukti</label>
                 <input
-                  value={reimbursementForm.receipt_url}
-                  onChange={(e) => setReimbursementForm((prev) => ({ ...prev, receipt_url: e.target.value }))}
-                  placeholder="Link bukti pembayaran"
+                  ref={receiptInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleReceiptFileChange}
                   disabled={reimbursementSubmitLoading}
                 />
+                {receiptPreviewUrl && (
+                  <div style={{ marginTop: 8 }}>
+                    <img
+                      src={receiptPreviewUrl}
+                      alt="Preview struk"
+                      style={{ maxWidth: 200, maxHeight: 160, display: 'block', marginBottom: 6, objectFit: 'cover' }}
+                    />
+                    <button
+                      type="button"
+                      className="secondary-btn"
+                      onClick={() => {
+                        try { if (receiptPreviewUrl) URL.revokeObjectURL(receiptPreviewUrl); } catch {}
+                        setReceiptPreviewUrl(null);
+                        setReimbursementForm((prev) => ({ ...prev, receipt_file: null }));
+                        if (receiptInputRef.current) {
+                          try { receiptInputRef.current.value = ''; } catch {}
+                        }
+                      }}
+                    >
+                      Hapus Foto
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
             <div className="form-actions compact-actions">
@@ -991,7 +1601,26 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
                       {' '}{request.expense_date}
                     </p>
                     {request.description && <p>Deskripsi: {request.description}</p>}
-                    {request.receipt_url && <p>Bukti: {request.receipt_url}</p>}
+                    {request.receipt_url && (
+                      <p>
+                        Bukti:{' '}
+                        <button
+                          type="button"
+                          onClick={() => handleViewPhoto(request.receipt_url)}
+                          className="link-btn"
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            color: '#0066cc',
+                            cursor: 'pointer',
+                            textDecoration: 'underline',
+                            padding: 0,
+                          }}
+                        >
+                          Lihat Foto
+                        </button>
+                      </p>
+                    )}
                     {request.decline_reason && <p>Ditolak: {request.decline_reason}</p>}
                   </div>
                   <div className="reimburse-actions">
@@ -1071,6 +1700,251 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
 
         {token && <AttendanceScanner token={token} />}
       </section>
+      {activeMenu === 'payroll' && canManagePayroll && (
+        <section className="panel payroll-panel">
+          <h3>Payroll Management</h3>
+
+          {payrollError && <p className="inline-error">{payrollError}</p>}
+          {payrollMessage && <p className="inline-success">{payrollMessage}</p>}
+
+          <form className="crm-form" onSubmit={handleCreatePayrollPeriod}>
+            <div className="form-header">
+              <h4>Buat Payroll Period</h4>
+            </div>
+            <div className="form-row-three">
+              <div className="form-group">
+                <label>Bulan</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={12}
+                  value={periodForm.month}
+                  onChange={(e) => setPeriodForm((prev) => ({ ...prev, month: Number(e.target.value) }))}
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label>Tahun</label>
+                <input
+                  type="number"
+                  min={2000}
+                  value={periodForm.year}
+                  onChange={(e) => setPeriodForm((prev) => ({ ...prev, year: Number(e.target.value) }))}
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label>Period Aktif</label>
+                <select
+                  value={selectedPayrollPeriodId}
+                  onChange={(e) => setSelectedPayrollPeriodId(e.target.value)}
+                  disabled={payrollLoading || payrollPeriods.length === 0}
+                >
+                  {payrollPeriods.length === 0 && <option value="">Belum ada period</option>}
+                  {payrollPeriods.map((period) => (
+                    <option key={period.id} value={period.id}>
+                      {String(period.month).padStart(2, '0')}/{period.year} ({period.status})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="form-actions compact-actions">
+              <button type="submit" className="primary-btn" disabled={payrollActionLoading}>
+                {payrollActionLoading ? 'Menyimpan...' : 'Buat Period'}
+              </button>
+              <button type="button" className="secondary-btn" onClick={handlePreviewPayroll} disabled={payrollActionLoading || !selectedPayrollPeriodId}>
+                Preview
+              </button>
+              <button type="button" className="secondary-btn" onClick={handleGeneratePayroll} disabled={payrollActionLoading || !selectedPayrollPeriodId}>
+                Generate
+              </button>
+              <button type="button" className="danger-btn" onClick={handleFinalizePayroll} disabled={payrollActionLoading || !selectedPayrollPeriodId}>
+                Finalize
+              </button>
+            </div>
+          </form>
+
+          {payrollPreview && (
+            <div className="payroll-preview-table">
+              <h4>Preview ({payrollPreview.workingDays} hari kerja)</h4>
+              <div className="payroll-grid">
+                {payrollPreview.results.map((row) => (
+                  <div key={row.employee.id} className="user-item">
+                    <div>
+                      <strong>{row.employee.full_name}</strong>
+                      <p>
+                        Base: Rp {Number(row.baseSalary).toLocaleString('id-ID')} | Reimburse: Rp {Number(row.total_reimburse).toLocaleString('id-ID')} | Penalti: Rp {Number(row.total_penalty).toLocaleString('id-ID')}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="status-pill">Net: Rp {Number(row.net_salary).toLocaleString('id-ID')}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="payroll-preview-table">
+            <h4>Payslips</h4>
+            {payrollPayslips.length === 0 ? (
+              <p>Belum ada payslip di period ini.</p>
+            ) : (
+              <div className="payroll-grid">
+                {payrollPayslips.map((payslip) => (
+                  <div key={payslip.id} className="user-item">
+                    <div>
+                      <strong>{payslip.employee?.full_name || payslip.employee_id}</strong>
+                      <p>
+                        Incentive: Rp {Number(payslip.total_incentive || 0).toLocaleString('id-ID')} | Reimburse: Rp {Number(payslip.total_reimburse || 0).toLocaleString('id-ID')} | Penalty: Rp {Number(payslip.total_penalty || 0).toLocaleString('id-ID')}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="status-pill">Net: Rp {Number(payslip.net_salary || 0).toLocaleString('id-ID')}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <form className="crm-form" onSubmit={handleAddManualPayrollItem}>
+            <div className="form-header">
+              <h4>Tambah Item Manual (Insentif / Penalti / Bonus)</h4>
+            </div>
+            <div className="form-row-three">
+              <div className="form-group">
+                <label>Payslip</label>
+                <select
+                  value={manualItemForm.payslip_id}
+                  onChange={(e) => setManualItemForm((prev) => ({ ...prev, payslip_id: e.target.value }))}
+                  required
+                >
+                  <option value="">Pilih payslip</option>
+                  {payrollPayslips.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.employee?.full_name || p.employee_id}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="form-group">
+                <label>Tipe</label>
+                <select
+                  value={manualItemForm.type}
+                  onChange={(e) => setManualItemForm((prev) => ({ ...prev, type: e.target.value as 'incentive' | 'penalty' | 'bonus' }))}
+                >
+                  <option value="incentive">Incentive</option>
+                  <option value="penalty">Penalty (kerusakan/dll)</option>
+                  <option value="bonus">Bonus</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label>Nominal</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={manualItemForm.amount}
+                  onChange={(e) => setManualItemForm((prev) => ({ ...prev, amount: Number(e.target.value) }))}
+                  required
+                />
+              </div>
+            </div>
+            <div className="form-row-one">
+              <div className="form-group">
+                <label>Deskripsi</label>
+                <input
+                  value={manualItemForm.description}
+                  onChange={(e) => setManualItemForm((prev) => ({ ...prev, description: e.target.value }))}
+                  placeholder="Contoh: Penalti kerusakan inventaris"
+                />
+              </div>
+            </div>
+            <div className="form-actions compact-actions">
+              <button type="submit" className="primary-btn" disabled={payrollActionLoading || !manualItemForm.payslip_id}>
+                {payrollActionLoading ? 'Menyimpan...' : 'Tambah Item Manual'}
+              </button>
+            </div>
+          </form>
+        </section>
+      )}
+
+      {activeMenu === 'my-payroll' && canViewMyPayroll && (
+        <section className="panel payroll-panel">
+          <h3>Payslip Saya</h3>
+          <p>Lihat ringkasan gaji, insentif, dan penalti Anda sendiri.</p>
+
+          {myPayrollError && <p className="inline-error">{myPayrollError}</p>}
+
+          {myPayrollLoading && <p>Memuat payslip...</p>}
+
+          {!myPayrollLoading && myPayrollPayslips.length === 0 && (
+            <p>Belum ada payslip untuk akun ini.</p>
+          )}
+
+          {myPayrollPayslips.length > 0 && (
+            <div className="payroll-preview-table">
+              <div className="form-group" style={{ maxWidth: 320 }}>
+                <label>Pilih Payslip</label>
+                <select
+                  value={selectedMyPayslipId}
+                  onChange={(e) => setSelectedMyPayslipId(e.target.value)}
+                >
+                  <option value="">Pilih payslip</option>
+                  {myPayrollPayslips.map((payslip) => (
+                    <option key={payslip.id} value={payslip.id}>
+                      {(() => {
+                        const payslipPeriod = (payslip as PayrollPayslip & { period?: PayrollPeriod }).period;
+                        return payslipPeriod?.month
+                          ? `${String(payslipPeriod.month).padStart(2, '0')}/${payslipPeriod.year}`
+                          : payslip.period_id;
+                      })()}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {myPayrollDetail && (
+                <div className="payroll-grid" style={{ marginTop: 16 }}>
+                  <div className="user-item">
+                    <div>
+                      <strong>{myPayrollDetail.payslip.employee?.full_name || employeeName}</strong>
+                      <p>
+                        Base: Rp {Number(myPayrollDetail.totals.base_salary || 0).toLocaleString('id-ID')} | Incentive: Rp {Number(myPayrollDetail.totals.total_incentive || 0).toLocaleString('id-ID')} | Reimburse: Rp {Number(myPayrollDetail.totals.total_reimburse || 0).toLocaleString('id-ID')} | Penalty: Rp {Number(myPayrollDetail.totals.total_penalty || 0).toLocaleString('id-ID')}
+                      </p>
+                      <p>
+                        Bonus: Rp {Number(myPayrollDetail.totals.total_bonus || 0).toLocaleString('id-ID')} | Net: Rp {Number(myPayrollDetail.totals.net_salary || 0).toLocaleString('id-ID')}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="status-pill">{myPayrollDetail.payslip.period?.month ? `${String(myPayrollDetail.payslip.period.month).padStart(2, '0')}/${myPayrollDetail.payslip.period.year}` : 'Payslip'}</span>
+                    </div>
+                  </div>
+
+                  <div className="user-item" style={{ gridColumn: '1 / -1' }}>
+                    <div>
+                      <strong>Breakdown Item</strong>
+                      <div style={{ marginTop: 12, display: 'grid', gap: 8 }}>
+                        {myPayrollDetail.items.length === 0 ? (
+                          <p>Tidak ada item detail.</p>
+                        ) : (
+                          myPayrollDetail.items.map((item) => (
+                            <div key={item.id} className="summary-item">
+                              <span>{item.type.toUpperCase()} / {item.source}</span>
+                              <strong>Rp {Number(item.amount || 0).toLocaleString('id-ID')}</strong>
+                              {item.description && <p>{item.description}</p>}
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </section>
       )}
 
       {activeMenu === 'users' && canManageUsers && (
@@ -1295,6 +2169,59 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
             </div>
           )}
         </section>
+      )}
+
+      {/* Photo Modal */}
+      {photoModalOpen && selectedPhotoUrl && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0, 0, 0, 0.7)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+          }}
+          onClick={handleClosePhotoModal}
+        >
+          <div
+            style={{
+              background: 'white',
+              borderRadius: '8px',
+              padding: '20px',
+              maxWidth: '90vw',
+              maxHeight: '90vh',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <img
+              src={selectedPhotoUrl}
+              alt="Reimbursement Receipt"
+              style={{
+                maxWidth: '80vw',
+                maxHeight: '70vh',
+                objectFit: 'contain',
+              }}
+            />
+            <button
+              type="button"
+              onClick={handleClosePhotoModal}
+              className="primary-btn"
+              style={{
+                marginTop: '15px',
+              }}
+            >
+              Tutup
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );

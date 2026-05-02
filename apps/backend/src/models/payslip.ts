@@ -11,7 +11,7 @@ export default function PayslipModel(sequelize: any) {
       const totalReimburse = Number(this.getDataValue('total_reimburse'));
       const totalPenalty = Number(this.getDataValue('total_penalty'));
 
-      this.setDataValue('net_salary', baseSalary + totalIncentive + totalBonus + totalReimburse - totalPenalty);
+      this.setDataValue('net_salary', baseSalary + totalIncentive + totalReimburse - totalPenalty);
     }
   }
 

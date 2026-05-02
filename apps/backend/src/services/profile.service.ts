@@ -1,22 +1,29 @@
 import { Employee, ActivityLog } from '../models/index';
 import { ValidationError, NotFoundError } from '../utils/errors';
+import { getReceiptUrl } from '../middlewares/upload';
 
 class ProfileService {
   static async updateMyProfile(
     userId: string,
     employeeId: string,
     updates: any,
+    photoFile: Express.Multer.File | undefined,
     clientIp: string
   ) {
     if (!employeeId) {
       throw new ValidationError('Employee ID required');
     }
 
-    // Whitelist only self-editable contact fields.
-    const allowedFields = ['phone', 'address'];
+    // Whitelist only self-editable fields.
+    const allowedFields = ['full_name', 'phone', 'address', 'photo_url'];
     const filtered = Object.keys(updates)
       .filter(key => allowedFields.includes(key))
-      .reduce((obj, key) => ({ ...obj, [key]: updates[key] }), {});
+      .reduce((obj, key) => ({ ...obj, [key]: updates[key] }), {} as any);
+
+    // Add photo if uploaded
+    if (photoFile) {
+      filtered.photo_url = getReceiptUrl(photoFile.filename);
+    }
 
     const employee = await Employee.findByPk(employeeId);
     if (!employee) {
@@ -46,13 +53,19 @@ class ProfileService {
     actorId: string,
     employeeId: string,
     updates: any,
+    photoFile: Express.Multer.File | undefined,
     clientIp: string
   ) {
-    // Whitelist only editable contact fields.
-    const allowedFields = ['phone', 'address'];
+    // Whitelist only editable fields.
+    const allowedFields = ['full_name', 'phone', 'address', 'photo_url'];
     const filtered = Object.keys(updates)
       .filter(key => allowedFields.includes(key))
-      .reduce((obj, key) => ({ ...obj, [key]: updates[key] }), {});
+      .reduce((obj, key) => ({ ...obj, [key]: updates[key] }), {} as any);
+
+    // Add photo if uploaded
+    if (photoFile) {
+      filtered.photo_url = getReceiptUrl(photoFile.filename);
+    }
 
     const employee = await Employee.findByPk(employeeId);
     if (!employee) {

@@ -16,8 +16,16 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
+# Uploaded files
+uploads/
+
 # OS / Editor
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
+
+#config
+package.json
+config.cjs
+database.ts

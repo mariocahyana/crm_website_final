@@ -6,7 +6,7 @@ export interface ReimbursementRequest {
   category: string;
   amount: string | number;
   description: string | null;
-  receipt_url: string | null;
+  receipt_url: string | null; // Ini tetap URL, karena dari backend kembaliannya biasanya berupa link gambar yang sudah disimpan
   expense_date: string;
   status: 'pending' | 'approved' | 'declined';
   approved_by: string | null;
@@ -34,6 +34,7 @@ interface ApiResponse<T> {
   data: T;
 }
 
+// Fungsi ini tetap dipertahankan untuk request biasa (JSON)
 function getAuthHeader(token: string) {
   return {
     Authorization: `Bearer ${token}`,
@@ -56,20 +57,42 @@ export const reimbursementsApi = {
     return payload.data;
   },
 
+  // --- BAGIAN YANG DIUBAH ---
   async createRequest(
     token: string,
-    body: {
+    data: {
       category: string;
       amount: number;
       description?: string;
-      receipt_url?: string;
+      receipt_file?: File | null; // File dari input type="file"
       expense_date: string;
     }
   ): Promise<ReimbursementRequest> {
+    
+    // 1. Buat object FormData
+    const formData = new FormData();
+    formData.append('category', data.category);
+    formData.append('amount', data.amount.toString()); // FormData butuh string atau Blob/File
+    formData.append('expense_date', data.expense_date);
+    
+    if (data.description) {
+      formData.append('description', data.description);
+    }
+    
+    // 2. Masukkan file foto struk jika ada
+    if (data.receipt_file) {
+      formData.append('receipt_file', data.receipt_file);
+    }
+
+    // 3. Kirim via Fetch
     const res = await fetch(`${API_BASE_URL}/reimbursements`, {
       method: 'POST',
-      headers: getAuthHeader(token),
-      body: JSON.stringify(body),
+      // PERHATIAN: Jangan panggil getAuthHeader di sini! 
+      // Kita hanya kirim token, biarkan browser yang otomatis set Content-Type multipart/form-data
+      headers: {
+        Authorization: `Bearer ${token}`
+      },
+      body: formData, // Kirim FormData, bukan JSON.stringify
     });
 
     if (!res.ok) {
@@ -80,6 +103,7 @@ export const reimbursementsApi = {
     const payload: ApiResponse<ReimbursementRequest> = await res.json();
     return payload.data;
   },
+  // --------------------------
 
   async decideRequest(
     token: string,
