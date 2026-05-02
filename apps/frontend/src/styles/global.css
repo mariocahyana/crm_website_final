@@ -311,6 +311,28 @@ form {
   margin-top: 14px;
 }
 
+.payroll-panel {
+  margin-top: 14px;
+}
+
+.payroll-preview-table {
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.payroll-preview-table h4 {
+  margin: 0 0 10px;
+}
+
+.payroll-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
 .reimburse-form {
   margin-top: 12px;
 }
