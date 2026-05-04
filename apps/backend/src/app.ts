@@ -9,7 +9,6 @@ import leaveRoutes from './routes/leave.routes';
 import reimbursementRoutes from './routes/reimbursement.routes';
 import attendanceRoutes from './routes/attendance.routes';
 import payrollRoutes from './routes/payroll.routes';
-import attendanceRoutes from './routes/attendance.routes';
 import { errorHandler } from './middlewares/errorHandler';
 
 const app = express();

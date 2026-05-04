@@ -167,9 +167,15 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
     reason: '',
   });
   
-  const [reimbursementForm, setReimbursementForm] = useState({
+  const [reimbursementForm, setReimbursementForm] = useState<{
+    category: string;
+    amount: string | number;
+    expense_date: string;
+    description: string;
+    receipt_file: File | null;
+  }>({
     category: 'Transport',
-    amount: 0,
+    amount: '',
     expense_date: new Date().toISOString().slice(0, 10),
     description: '',
     receipt_file: null as File | null,
@@ -200,7 +206,7 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
 
   const getDefaultReimbursementForm = () => ({
     category: 'Transport',
-    amount: 0,
+    amount: '',
     expense_date: new Date().toISOString().slice(0, 10),
     description: '',
     receipt_file: null as File | null,
@@ -921,7 +927,19 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
   const handleCreateReimbursement = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!token) return;
-
+    if (!reimbursementForm.receipt_file) {
+      setReimbursementError('Foto struk/bukti wajib diupload');
+      return;
+    }
+    const today = new Date().toISOString().slice(0, 10);
+    if (reimbursementForm.expense_date > today) {
+      setReimbursementError('Tanggal pengeluaran tidak boleh melebihi hari ini');
+      return;
+    }
+    if (!reimbursementForm.description.trim()) {
+      setReimbursementError('Deskripsi pengeluaran wajib diisi');
+      return;
+    }
     try {
       setReimbursementSubmitLoading(true);
       setReimbursementError('');
@@ -935,7 +953,7 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
       });
       setReimbursementForm((prev) => ({
         ...prev,
-        amount: 0,
+        amount: '',
         description: '',
         receipt_file: null,
       }));
@@ -1241,7 +1259,7 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
                 )}
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, justifyContent: 'center' }}>
-                  <div style={{ fontSize: 12, fontWeight: 500, color: '#666' }}>Upload Foto Baru</div>
+                  
                   <input
                     ref={photoInputRef}
                     type="file"
@@ -1258,7 +1276,7 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
                     onClick={() => photoInputRef.current?.click()}
                     disabled={profileLoading}
                   >
-                    Pilih Foto
+                    Ganti Foto
                   </button>
                 </div>
               </div>
@@ -1505,7 +1523,7 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
           </div>
         </div>
 
-        {reimbursementError && <p className="inline-error">{reimbursementError}</p>}
+        {reimbursementError && <p className="inline-error" style={{ color: '#dc2626' }}>{reimbursementError}</p>}
         {reimbursementMessage && <p className="inline-success">{reimbursementMessage}</p>}
 
         {currentUser.employee ? (
@@ -1531,7 +1549,7 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
                   type="number"
                   min={0}
                   value={reimbursementForm.amount}
-                  onChange={(e) => setReimbursementForm((prev) => ({ ...prev, amount: Number(e.target.value) }))}
+                  onChange={(e) => setReimbursementForm((prev) => ({ ...prev, amount: e.target.value === '' ? '' : Number(e.target.value) }))}
                   required
                   disabled={reimbursementSubmitLoading}
                 />
@@ -1540,6 +1558,7 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
                 <label>Tanggal Pengeluaran</label>
                 <input
                   type="date"
+                  max={new Date().toISOString().slice(0, 10)}
                   value={reimbursementForm.expense_date}
                   onChange={(e) => setReimbursementForm((prev) => ({ ...prev, expense_date: e.target.value }))}
                   required

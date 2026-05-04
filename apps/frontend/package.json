@@ -19,6 +19,7 @@
     "tubes-rpll": "file:../.."
   },
   "devDependencies": {
+    "@types/qrcode": "^1.5.6",
     "@vitejs/plugin-react": "^4.3.1",
     "vite": "^7.0.0"
   }
