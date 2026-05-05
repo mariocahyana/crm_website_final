@@ -2798,7 +2798,7 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
               {!editingUserId ? (
                 <button
                   type="submit"
-                  disabled={submitLoading || Boolean(userFormValidationError)}
+                  disabled={submitLoading}
                   className="primary-btn"
                 >
                   {submitLoading ? 'Menyimpan...' : 'Tambah User'}
