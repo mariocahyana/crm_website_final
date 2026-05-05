@@ -55,6 +55,9 @@ function isDateWithinRange(dateKey: string, startDate: string, endDate: string) 
   return dateKey >= startDate && dateKey <= endDate;
 }
 
+// Maximum allowed file size for uploads (5 MB)
+const MAX_FILE_SIZE = 5 * 1024 * 1024;
+
 export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPageProps) {
   const defaultProfilePhoto = '/images/default-profile.svg';
   const portalType = currentUser.user.role === 'admin'
@@ -855,6 +858,12 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
       return;
     }
 
+      // Validasi ukuran file foto (jika ada)
+      if (profileForm.photo_file && profileForm.photo_file.size > MAX_FILE_SIZE) {
+        setProfileError('Ukuran foto maksimal 5MB');
+        return;
+      }
+
     try {
       setProfileLoading(true);
       setProfileError('');
@@ -897,9 +906,31 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
     if (!token) return;
 
     try {
+      const today = new Date().toISOString().slice(0, 10);
       setLeaveSubmitLoading(true);
       setLeaveError('');
       setLeaveMessage('');
+      // Validasi alasan cuti wajib diisi
+      if (!leaveForm.reason || !leaveForm.reason.trim()) {
+        setLeaveError('Alasan cuti wajib diisi');
+        setLeaveSubmitLoading(false);
+        return;
+      }
+      
+      // Validasi tanggal mulai cuti tidak boleh sebelum hari ini
+      if (leaveForm.start_date < today) {
+        setLeaveError('Tanggal mulai cuti tidak boleh sebelum hari ini');
+        setLeaveSubmitLoading(false);
+        return;
+      }
+      
+      // Validasi tanggal selesai harus >= tanggal mulai
+      if (leaveForm.end_date < leaveForm.start_date) {
+        setLeaveError('Tanggal selesai cuti harus lebih besar atau sama dengan tanggal mulai');
+        setLeaveSubmitLoading(false);
+        return;
+      }
+      
       await leavesApi.createRequest(token, leaveForm);
       setLeaveForm((prev) => ({
         ...prev,
@@ -963,6 +994,11 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
       setReimbursementError('Foto struk/bukti wajib diupload');
       return;
     }
+    // Validasi ukuran file struk
+    if (reimbursementForm.receipt_file && reimbursementForm.receipt_file.size > MAX_FILE_SIZE) {
+      setReimbursementError('Ukuran file struk maksimal 5MB');
+      return;
+    }
     const today = new Date().toISOString().slice(0, 10);
     if (reimbursementForm.expense_date > today) {
       setReimbursementError('Tanggal pengeluaran tidak boleh melebihi hari ini');
@@ -970,6 +1006,10 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
     }
     if (!reimbursementForm.description.trim()) {
       setReimbursementError('Deskripsi pengeluaran wajib diisi');
+      return;
+    }
+    if (!reimbursementForm.amount || Number(reimbursementForm.amount) <= 0) {
+      setReimbursementError('Nominal harus lebih dari 0');
       return;
     }
     try {
@@ -1321,6 +1361,9 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
                   value={profileForm.full_name}
                   onChange={(e) => setProfileForm((prev) => ({ ...prev, full_name: e.target.value }))}
                   placeholder="Nama lengkap"
+                  required
+                  minLength={3}
+                  maxLength={100}
                   disabled={profileLoading}
                 />
               </div>
@@ -1330,6 +1373,9 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
                   value={profileForm.phone}
                   onChange={(e) => setProfileForm((prev) => ({ ...prev, phone: e.target.value }))}
                   placeholder="Contoh: 081234567890 (minimal 10 digit)"
+                  required
+                  minLength={10}
+                  maxLength={20}
                   disabled={profileLoading}
                 />
               </div>
@@ -1342,6 +1388,9 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
                   value={profileForm.address}
                   onChange={(e) => setProfileForm((prev) => ({ ...prev, address: e.target.value }))}
                   placeholder="Alamat"
+                  required
+                  minLength={15}
+                  maxLength={255}
                   disabled={profileLoading}
                 />
               </div>
@@ -1420,6 +1469,7 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
                   type="date"
                   value={leaveForm.start_date}
                   onChange={(e) => setLeaveForm((prev) => ({ ...prev, start_date: e.target.value }))}
+                  min={new Date().toISOString().slice(0, 10)}
                   required
                   disabled={leaveSubmitLoading}
                 />
@@ -1430,6 +1480,7 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
                   type="date"
                   value={leaveForm.end_date}
                   onChange={(e) => setLeaveForm((prev) => ({ ...prev, end_date: e.target.value }))}
+                  min={leaveForm.start_date || new Date().toISOString().slice(0, 10)}
                   required
                   disabled={leaveSubmitLoading}
                 />
@@ -1442,6 +1493,9 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
                   value={leaveForm.reason}
                   onChange={(e) => setLeaveForm((prev) => ({ ...prev, reason: e.target.value }))}
                   placeholder="Alasan cuti"
+                  required
+                  minLength={3}
+                  maxLength={300}
                   disabled={leaveSubmitLoading}
                 />
               </div>
@@ -1579,7 +1633,7 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
                 <label>Nominal</label>
                 <input
                   type="number"
-                  min={0}
+                  min={1}
                   value={reimbursementForm.amount}
                   onChange={(e) => setReimbursementForm((prev) => ({ ...prev, amount: e.target.value === '' ? '' : Number(e.target.value) }))}
                   required
@@ -1606,6 +1660,7 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
                   onChange={(e) => setReimbursementForm((prev) => ({ ...prev, description: e.target.value }))}
                   placeholder="Contoh: Transport meeting client"
                   disabled={reimbursementSubmitLoading}
+                  maxLength={50}
                 />
               </div>
               <div className="form-group">
@@ -1615,6 +1670,7 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
                   type="file"
                   accept="image/*"
                   onChange={handleReceiptFileChange}
+                  required
                   disabled={reimbursementSubmitLoading}
                 />
                 {receiptPreviewUrl && (
