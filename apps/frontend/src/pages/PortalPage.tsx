@@ -166,6 +166,18 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
   });
   
   const [createdEmployeeNumber, setCreatedEmployeeNumber] = useState<string>('');
+  const [editingUserSnapshot, setEditingUserSnapshot] = useState<{
+    full_name: string;
+    email: string;
+    role: 'admin' | 'staff' | 'manager';
+    join_date: string;
+    base_salary: number;
+    job_title: string;
+    phone: string;
+    address: string;
+    department_id: string;
+    manager_id: string;
+  } | null>(null);
   
   const [profileForm, setProfileForm] = useState({
     full_name: currentUser.employee?.full_name || '',
@@ -459,6 +471,166 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
     );
   }, [currentUser.employee, profileForm.address, profileForm.full_name, profileForm.phone, profileForm.photo_deleted, profileForm.photo_file]);
 
+  const getProfileValidationError = () => {
+    if (!profileForm.full_name.trim()) {
+      return 'Nama Lengkap wajib diisi';
+    }
+
+    if (!profileForm.phone.trim()) {
+      return 'Nomor Telepon wajib diisi';
+    }
+
+    const normalizedPhone = normalizePhoneValue(profileForm.phone);
+    const phoneDigitsOnly = normalizedPhone.replace(/\D/g, '');
+    if (phoneDigitsOnly.length < 10) {
+      return 'Nomor Telepon harus minimal 10 digit (contoh: 081234567890)';
+    }
+
+    if (!profileForm.address.trim()) {
+      return 'Alamat wajib diisi';
+    }
+
+    if (profileForm.address.trim().length < 15) {
+      return 'Alamat harus minimal 15 karakter (contoh: Jl. Merdeka No. 123)';
+    }
+
+    if (profileForm.photo_file && profileForm.photo_file.size > MAX_FILE_SIZE) {
+      return 'Ukuran foto maksimal 5MB';
+    }
+
+    if (!profileIsDirty) {
+      return 'Tidak ada perubahan pada profile';
+    }
+
+    return null;
+  };
+
+  const getLeaveValidationError = () => {
+    const today = new Date().toISOString().slice(0, 10);
+
+    if (!leaveForm.reason || !leaveForm.reason.trim()) {
+      return 'Alasan cuti wajib diisi';
+    }
+
+    if (leaveForm.start_date < today) {
+      return 'Tanggal mulai cuti tidak boleh sebelum hari ini';
+    }
+
+    if (leaveForm.end_date < leaveForm.start_date) {
+      return 'Tanggal selesai cuti harus lebih besar atau sama dengan tanggal mulai';
+    }
+
+    return null;
+  };
+
+  const getUserFormValidationError = () => {
+    if (!form.full_name.trim()) {
+      return 'Nama lengkap wajib diisi';
+    }
+
+    if (!form.email.trim()) {
+      return 'Email wajib diisi';
+    }
+
+    if (!/^\S+@company\.com$/i.test(form.email.trim())) {
+      return 'Email harus menggunakan domain @company.com';
+    }
+
+    if (!editingUserId && !form.password.trim()) {
+      return 'Password wajib diisi';
+    }
+
+    if (!editingUserId && form.password.trim().length < 8) {
+      return 'Password minimal 8 karakter';
+    }
+
+    if (!form.department_id) {
+      return 'Department wajib dipilih';
+    }
+
+    if (!form.join_date) {
+      return 'Tanggal bergabung wajib diisi';
+    }
+
+    if (Number(form.base_salary) < 0) {
+      return 'Gaji pokok tidak boleh negatif';
+    }
+
+    if (form.phone.trim() && form.phone.trim().replace(/\D/g, '').length < 10) {
+      return 'Nomor telepon harus minimal 10 digit';
+    }
+
+    if (form.address.trim() && form.address.trim().length < 15) {
+      return 'Alamat harus minimal 15 karakter';
+    }
+
+    if (!form.job_title.trim()) {
+      return 'Jabatan wajib diisi';
+    }
+
+    if (editingUserId && editingUserSnapshot) {
+      const sameFullName = form.full_name.trim() === editingUserSnapshot.full_name.trim();
+      const sameEmail = form.email.trim() === editingUserSnapshot.email.trim();
+      const sameRole = form.role === editingUserSnapshot.role;
+      const sameJoinDate = form.join_date === editingUserSnapshot.join_date;
+      const sameBaseSalary = Number(form.base_salary) === editingUserSnapshot.base_salary;
+      const sameJobTitle = form.job_title.trim() === editingUserSnapshot.job_title.trim();
+      const samePhone = normalizePhoneValue(form.phone) === normalizePhoneValue(editingUserSnapshot.phone);
+      const sameAddress = form.address.trim() === editingUserSnapshot.address.trim();
+      const sameDepartment = form.department_id === editingUserSnapshot.department_id;
+      const sameManager = (form.manager_id || '') === (editingUserSnapshot.manager_id || '');
+
+      if (
+        sameFullName
+        && sameEmail
+        && sameRole
+        && sameJoinDate
+        && sameBaseSalary
+        && sameJobTitle
+        && samePhone
+        && sameAddress
+        && sameDepartment
+        && sameManager
+      ) {
+        return 'Tidak ada perubahan pada data user';
+      }
+    }
+
+    return null;
+  };
+
+  const userFormValidationError = getUserFormValidationError();
+
+  const userFormHasChanges = useMemo(() => {
+    if (!editingUserId || !editingUserSnapshot) {
+      return false;
+    }
+
+    const sameFullName = form.full_name.trim() === editingUserSnapshot.full_name.trim();
+    const sameEmail = form.email.trim() === editingUserSnapshot.email.trim();
+    const sameRole = form.role === editingUserSnapshot.role;
+    const sameJoinDate = form.join_date === editingUserSnapshot.join_date;
+    const sameBaseSalary = Number(form.base_salary) === editingUserSnapshot.base_salary;
+    const sameJobTitle = form.job_title.trim() === editingUserSnapshot.job_title.trim();
+    const samePhone = normalizePhoneValue(form.phone) === normalizePhoneValue(editingUserSnapshot.phone);
+    const sameAddress = form.address.trim() === editingUserSnapshot.address.trim();
+    const sameDepartment = form.department_id === editingUserSnapshot.department_id;
+    const sameManager = (form.manager_id || '') === (editingUserSnapshot.manager_id || '');
+
+    return !(
+      sameFullName
+      && sameEmail
+      && sameRole
+      && sameJoinDate
+      && sameBaseSalary
+      && sameJobTitle
+      && samePhone
+      && sameAddress
+      && sameDepartment
+      && sameManager
+    );
+  }, [editingUserId, editingUserSnapshot, form.address, form.base_salary, form.department_id, form.email, form.full_name, form.job_title, form.join_date, form.manager_id, form.phone, form.role]);
+
   const resetForm = () => {
     setForm({
       full_name: '',
@@ -474,6 +646,8 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
       manager_id: '',
     });
     setEditingUserId(null);
+    setEditingEmployeeId(null);
+    setEditingUserSnapshot(null);
     setCreatedEmployeeNumber('');
   };
 
@@ -482,7 +656,7 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
     setEditingEmployeeId(user.employee?.id || null);
     setUsersError('');
     setCreatedEmployeeNumber(user.employee?.employee_number || '');
-    setForm({
+    const nextForm = {
       full_name: user.employee?.full_name || '',
       email: user.email,
       password: '',
@@ -494,6 +668,20 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
       address: user.employee?.address || '',
       department_id: user.employee?.department_id || '',
       manager_id: user.employee?.manager_id || '',
+    };
+
+    setForm(nextForm);
+    setEditingUserSnapshot({
+      full_name: nextForm.full_name,
+      email: nextForm.email,
+      role: nextForm.role,
+      join_date: nextForm.join_date,
+      base_salary: Number(nextForm.base_salary),
+      job_title: nextForm.job_title,
+      phone: nextForm.phone,
+      address: nextForm.address,
+      department_id: nextForm.department_id,
+      manager_id: nextForm.manager_id,
     });
   };
 
@@ -855,43 +1043,13 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
     e.preventDefault();
     if (!token || !currentUser.employee) return;
 
-    // Validasi field yang wajib diisi
-    if (!profileForm.full_name.trim()) {
-      setProfileError('Nama Lengkap wajib diisi');
+    const profileValidationError = getProfileValidationError();
+    if (profileValidationError) {
+      setProfileError(profileValidationError);
       return;
     }
-    if (!profileForm.phone.trim()) {
-      setProfileError('Nomor Telepon wajib diisi');
-      return;
-    }
-    // Normalisasi nomor telepon dulu, lalu validasi panjang digitnya
+
     const normalizedPhone = normalizePhoneValue(profileForm.phone);
-
-    const phoneDigitsOnly = normalizedPhone.replace(/\D/g, '');
-    if (phoneDigitsOnly.length < 10) {
-      setProfileError('Nomor Telepon harus minimal 10 digit (contoh: 081234567890)');
-      return;
-    }
-    if (!profileForm.address.trim()) {
-      setProfileError('Alamat wajib diisi');
-      return;
-    }
-    // Validasi format alamat (minimal 15 karakter, hindari input ngasal)
-    if (profileForm.address.trim().length < 15) {
-      setProfileError('Alamat harus minimal 15 karakter (contoh: Jl. Merdeka No. 123)');
-      return;
-    }
-
-    // Validasi ukuran file foto (jika ada)
-    if (profileForm.photo_file && profileForm.photo_file.size > MAX_FILE_SIZE) {
-      setProfileError('Ukuran foto maksimal 5MB');
-      return;
-    }
-
-    if (!profileIsDirty) {
-      setProfileError('Tidak ada perubahan pada profile');
-      return;
-    }
 
     try {
       setProfileLoading(true);
@@ -935,28 +1093,12 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
     if (!token) return;
 
     try {
-      const today = new Date().toISOString().slice(0, 10);
       setLeaveSubmitLoading(true);
       setLeaveError('');
       setLeaveMessage('');
-      // Validasi alasan cuti wajib diisi
-      if (!leaveForm.reason || !leaveForm.reason.trim()) {
-        setLeaveError('Alasan cuti wajib diisi');
-        setLeaveSubmitLoading(false);
-        return;
-      }
-      
-      // Validasi tanggal mulai cuti tidak boleh sebelum hari ini
-      if (leaveForm.start_date < today) {
-        setLeaveError('Tanggal mulai cuti tidak boleh sebelum hari ini');
-        setLeaveSubmitLoading(false);
-        return;
-      }
-      
-      // Validasi tanggal selesai harus >= tanggal mulai
-      if (leaveForm.end_date < leaveForm.start_date) {
-        setLeaveError('Tanggal selesai cuti harus lebih besar atau sama dengan tanggal mulai');
-        setLeaveSubmitLoading(false);
+      const leaveValidationError = getLeaveValidationError();
+      if (leaveValidationError) {
+        setLeaveError(leaveValidationError);
         return;
       }
       
@@ -1104,8 +1246,15 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
     e.preventDefault();
     if (!token) return;
 
+    const validationError = userFormValidationError;
+    if (validationError) {
+      setUsersError(validationError);
+      return;
+    }
+
     try {
       setSubmitLoading(true);
+      setUsersError('');
       const response = await usersApi.createUser(token, {
         full_name: form.full_name,
         email: form.email,
@@ -1114,7 +1263,7 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
         join_date: form.join_date,
         base_salary: Number(form.base_salary),
         job_title: form.job_title,
-        phone: form.phone,
+        phone: normalizePhoneValue(form.phone),
         address: form.address,
         department_id: form.department_id || null,
         manager_id: form.manager_id || null,
@@ -1146,8 +1295,20 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
     e.preventDefault();
     if (!token || !editingUserId) return;
 
+    const validationError = userFormValidationError;
+    if (validationError) {
+      setUsersError(validationError);
+      return;
+    }
+
+    if (!userFormHasChanges) {
+      setUsersError('Tidak ada perubahan pada data user');
+      return;
+    }
+
     try {
       setSubmitLoading(true);
+      setUsersError('');
       await usersApi.updateUser(token, editingUserId, {
         full_name: form.full_name,
         email: form.email,
@@ -1155,7 +1316,7 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
         join_date: form.join_date,
         base_salary: Number(form.base_salary),
         job_title: form.job_title,
-        phone: form.phone,
+        phone: normalizePhoneValue(form.phone),
         address: form.address,
         department_id: form.department_id || null,
         manager_id: form.manager_id || null,
@@ -2278,16 +2439,21 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
                     value={form.full_name}
                     onChange={(e) => setForm((prev) => ({ ...prev, full_name: e.target.value }))}
                     required
+                    minLength={3}
+                    maxLength={100}
                   />
                 </div>
                 <div className="form-group">
                   <label>Email *</label>
                   <input
-                    placeholder="Masukkan email"
+                    placeholder="Masukkan email @company.com"
                     type="email"
                     value={form.email}
                     onChange={(e) => setForm((prev) => ({ ...prev, email: e.target.value }))}
                     required
+                    maxLength={150}
+                    pattern="^[^\s@]+@company\.com$"
+                    title="Email harus menggunakan domain @company.com"
                   />
                 </div>
               </div>
@@ -2302,6 +2468,8 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
                       value={form.password}
                       onChange={(e) => setForm((prev) => ({ ...prev, password: e.target.value }))}
                       required
+                      minLength={8}
+                      maxLength={100}
                     />
                   </div>
                 </div>
@@ -2347,6 +2515,7 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
                   <select
                     value={form.role}
                     onChange={(e) => setForm((prev) => ({ ...prev, role: e.target.value as 'admin' | 'staff' | 'manager' }))}
+                    required
                   >
                     <option value="staff">Staff</option>
                     <option value="manager">Manager</option>
@@ -2391,6 +2560,9 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
                     placeholder="Masukkan job title"
                     value={form.job_title}
                     onChange={(e) => setForm((prev) => ({ ...prev, job_title: e.target.value }))}
+                    required
+                    minLength={2}
+                    maxLength={100}
                   />
                 </div>
                 <div className="form-group">
@@ -2399,6 +2571,9 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
                     placeholder="Nomor telepon"
                     value={form.phone}
                     onChange={(e) => setForm((prev) => ({ ...prev, phone: e.target.value }))}
+                    required
+                    minLength={10}
+                    maxLength={20}
                   />
                 </div>
               </div>
@@ -2409,16 +2584,37 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
                     placeholder="Alamat lengkap"
                     value={form.address}
                     onChange={(e) => setForm((prev) => ({ ...prev, address: e.target.value }))}
+                    required
+                    minLength={15}
+                    maxLength={255}
                   />
                 </div>
               </div>
             </div>
 
             <div className="form-actions">
-              <button type="submit" disabled={submitLoading} className="primary-btn">
-                {submitLoading ? 'Menyimpan...' : editingUserId ? 'Simpan Perubahan' : 'Tambah User'}
-              </button>
-              {editingUserId && (
+              {!editingUserId ? (
+                <button
+                  type="submit"
+                  disabled={submitLoading || Boolean(userFormValidationError)}
+                  className="primary-btn"
+                >
+                  {submitLoading ? 'Menyimpan...' : 'Tambah User'}
+                </button>
+              ) : userFormHasChanges ? (
+                <>
+                  <button type="button" className="secondary-btn" onClick={resetForm}>
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={submitLoading || Boolean(userFormValidationError)}
+                    className="primary-btn"
+                  >
+                    {submitLoading ? 'Menyimpan...' : 'Simpan Perubahan'}
+                  </button>
+                </>
+              ) : (
                 <button type="button" className="secondary-btn" onClick={resetForm}>
                   Batal
                 </button>
