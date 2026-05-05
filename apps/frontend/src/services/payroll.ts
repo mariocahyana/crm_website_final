@@ -9,31 +9,6 @@ export interface PayrollPeriod {
   created_at: string;
 }
 
-export interface PayrollPreviewResult {
-  employee: {
-    id: string;
-    employee_number: string;
-    full_name: string;
-    base_salary: string | number;
-  };
-  baseSalary: number;
-  total_incentive: number;
-  total_reimburse: number;
-  unpaid_days: number;
-  unpaid_penalty: number;
-  total_late_minutes: number;
-  late_penalty: number;
-  late_rate_per_minute?: number;
-  total_penalty: number;
-  net_salary: number;
-}
-
-export interface PayrollPreviewResponse {
-  period: PayrollPeriod;
-  workingDays: number;
-  results: PayrollPreviewResult[];
-}
-
 export interface PayrollItem {
   id: string;
   payslip_id: string;
@@ -154,15 +129,6 @@ export const payrollApi = {
     return payload.data;
   },
 
-  async previewPeriod(token: string, periodId: string): Promise<PayrollPreviewResponse> {
-    const res = await fetch(`${API_BASE_URL}/payroll/periods/${periodId}/preview`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-
-    const payload = await parseApiResponse<PayrollPreviewResponse>(res, 'Gagal preview payroll');
-    return payload.data;
-  },
-
   async generatePeriod(token: string, periodId: string): Promise<PayrollPayslip[]> {
     const res = await fetch(`${API_BASE_URL}/payroll/periods/${periodId}/generate`, {
       method: 'POST',
@@ -192,6 +158,15 @@ export const payrollApi = {
     return payload.data.payslips;
   },
 
+  async getPayslipDetail(token: string, payslipId: string): Promise<PayrollPayslipDetailResponse> {
+    const res = await fetch(`${API_BASE_URL}/payroll/payslips/${payslipId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    const payload = await parseApiResponse<PayrollPayslipDetailResponse>(res, 'Gagal mengambil detail payslip');
+    return payload.data;
+  },
+
   async listMyPayslips(token: string, periodId?: string): Promise<PayrollPayslip[]> {
     const url = new URL(`${API_BASE_URL}/payroll/me/payslips`);
     if (periodId) {
@@ -218,7 +193,7 @@ export const payrollApi = {
   async addManualItem(
     token: string,
     payslipId: string,
-    body: { type: 'incentive' | 'penalty' | 'bonus'; amount: number; description?: string }
+    body: { type: 'incentive' | 'penalty'; amount: number; description?: string }
   ): Promise<PayrollPayslip> {
     const res = await fetch(`${API_BASE_URL}/payroll/payslips/${payslipId}/items`, {
       method: 'POST',
@@ -227,6 +202,31 @@ export const payrollApi = {
     });
 
     const payload = await parseApiResponse<PayrollPayslip>(res, 'Gagal menambah item manual');
+    return payload.data;
+  },
+
+  async addManualItemToPeriod(
+    token: string,
+    periodId: string,
+    body: { employee_id: string; type: 'incentive' | 'penalty'; amount: number; description?: string }
+  ): Promise<any> {
+    const res = await fetch(`${API_BASE_URL}/payroll/periods/${periodId}/items`, {
+      method: 'POST',
+      headers: getAuthHeader(token),
+      body: JSON.stringify(body),
+    });
+
+    const payload = await parseApiResponse<any>(res, 'Gagal menambah item manual ke period');
+    return payload.data;
+  },
+
+  async deleteManualItem(token: string, payslipId: string, itemId: string): Promise<PayrollPayslip> {
+    const res = await fetch(`${API_BASE_URL}/payroll/payslips/${payslipId}/items/${itemId}`, {
+      method: 'DELETE',
+      headers: getAuthHeader(token),
+    });
+
+    const payload = await parseApiResponse<PayrollPayslip>(res, 'Gagal menghapus item manual');
     return payload.data;
   },
 };

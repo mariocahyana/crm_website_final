@@ -17,7 +17,15 @@ export default function PayrollItemModel(sequelize: any) {
     },
     payslip_id: {
       type: DataTypes.UUID,
-      allowNull: false,
+      allowNull: true,
+    },
+    payroll_period_id: {
+      type: DataTypes.UUID,
+      allowNull: true,
+    },
+    employee_id: {
+      type: DataTypes.UUID,
+      allowNull: true,
     },
     type: {
       type: DataTypes.ENUM('incentive', 'penalty', 'bonus', 'reimburse'),
