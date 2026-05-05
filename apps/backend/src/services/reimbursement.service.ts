@@ -79,12 +79,18 @@ class ReimbursementService {
     }
 
     if (auth.role === 'manager') {
+      const manager = await Employee.findByPk(auth.employeeId, {
+        attributes: ['id', 'department_id'],
+        raw: true,
+      }) as { id: string; department_id: string | null } | null;
+
       include[0] = {
         ...include[0],
         where: {
           [Op.or]: [
             { id: auth.employeeId },
             { manager_id: auth.employeeId },
+            ...(manager?.department_id ? [{ department_id: manager.department_id }] : []),
           ],
         },
       } as any;
@@ -100,6 +106,10 @@ class ReimbursementService {
   static async createRequest(auth: AuthContext, input: CreateReimbursementInput, file: Express.Multer.File | undefined, clientIp: string) {
     if (!auth.employeeId) {
       throw new ValidationError('Employee context tidak ditemukan');
+    }
+
+    if (auth.role === 'admin') {
+      throw new ForbiddenError('Admin tidak dapat mengajukan reimburse');
     }
 
     const category = sanitizeText(input.category);

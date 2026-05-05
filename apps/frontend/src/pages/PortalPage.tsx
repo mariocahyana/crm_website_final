@@ -5,7 +5,7 @@ import { attendanceApi, type AdminAttendanceQrCode } from '../services/attendanc
 import { AttendanceScanner } from '../components/AttendanceScanner';
 import { leavesApi, type LeaveRequest, type LeaveType } from '../services/leaves';
 import { profileApi } from '../services/profile';
-import { payrollApi, type PayrollPeriod, type PayrollPreviewResponse, type PayrollPayslip, type PayrollPayslipDetailResponse } from '../services/payroll';
+import { payrollApi, type PayrollPeriod, type PayrollPayslip, type PayrollPayslipDetailResponse } from '../services/payroll';
 import { reimbursementsApi, type ReimbursementRequest } from '../services/reimbursements';
 import { usersApi, type ManagedUser, type UserManagementOptions } from '../services/users';
 
@@ -113,27 +113,32 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
     year: new Date().getFullYear(),
   });
   const [payrollPeriods, setPayrollPeriods] = useState<PayrollPeriod[]>([]);
-  const [payrollPreview, setPayrollPreview] = useState<PayrollPreviewResponse | null>(null);
   const [payrollPayslips, setPayrollPayslips] = useState<PayrollPayslip[]>([]);
   const [selectedPayrollPeriodId, setSelectedPayrollPeriodId] = useState('');
+  const [selectedPayrollPayslipId, setSelectedPayrollPayslipId] = useState('');
+  const [payrollPayslipDetail, setPayrollPayslipDetail] = useState<PayrollPayslipDetailResponse | null>(null);
   const [payrollLoading, setPayrollLoading] = useState(false);
   const [payrollActionLoading, setPayrollActionLoading] = useState(false);
+  const [payrollDetailLoading, setPayrollDetailLoading] = useState(false);
   const [payrollError, setPayrollError] = useState('');
+  const [payrollDetailError, setPayrollDetailError] = useState('');
   const [payrollMessage, setPayrollMessage] = useState('');
+  const [payrollView, setPayrollView] = useState<'payslips' | 'items'>('payslips');
   const [myPayrollPayslips, setMyPayrollPayslips] = useState<PayrollPayslip[]>([]);
   const [myPayrollDetail, setMyPayrollDetail] = useState<PayrollPayslipDetailResponse | null>(null);
   const [myPayrollLoading, setMyPayrollLoading] = useState(false);
   const [myPayrollError, setMyPayrollError] = useState('');
   const [selectedMyPayslipId, setSelectedMyPayslipId] = useState('');
-  
+
   const [periodForm, setPeriodForm] = useState({
     month: new Date().getMonth() + 1,
     year: new Date().getFullYear(),
   });
-  
+
   const [manualItemForm, setManualItemForm] = useState({
     payslip_id: '',
-    type: 'incentive' as 'incentive' | 'penalty' | 'bonus',
+    employee_id: '',
+    type: 'incentive' as 'incentive' | 'penalty',
     amount: 0,
     description: '',
   });
@@ -932,11 +937,18 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
   useEffect(() => {
     if (!selectedPayrollPeriodId) {
       setPayrollPayslips([]);
+      setSelectedPayrollPayslipId('');
+      setPayrollPayslipDetail(null);
       return;
     }
 
     void loadPayrollPayslips(selectedPayrollPeriodId);
   }, [selectedPayrollPeriodId, token]);
+
+  useEffect(() => {
+    if (activeMenu !== 'payroll' || !selectedPayrollPayslipId) return;
+    void loadPayrollPayslipDetail(selectedPayrollPayslipId);
+  }, [activeMenu, selectedPayrollPayslipId, token, canManagePayroll]);
 
   const handleCreatePayrollPeriod = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -957,31 +969,45 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
     }
   };
 
-  const handlePreviewPayroll = async () => {
-    if (!token || !selectedPayrollPeriodId) return;
-    try {
-      setPayrollActionLoading(true);
-      setPayrollError('');
-      const preview = await payrollApi.previewPeriod(token, selectedPayrollPeriodId);
-      setPayrollPreview(preview);
-      setPayrollMessage('Preview payroll berhasil dibuat');
-    } catch (err) {
-      setPayrollError(err instanceof Error ? err.message : 'Gagal preview payroll');
-    } finally {
-      setPayrollActionLoading(false);
-    }
-  };
-
   const loadPayrollPayslips = async (periodId: string) => {
     if (!token || !periodId) return;
     try {
       const payslips = await payrollApi.listPayslips(token, periodId);
       setPayrollPayslips(payslips);
+      const nextSelectedPayslipId = payslips.some((payslip) => payslip.id === selectedPayrollPayslipId)
+        ? selectedPayrollPayslipId
+        : payslips[0]?.id || '';
+
+      if (nextSelectedPayslipId !== selectedPayrollPayslipId) {
+        setSelectedPayrollPayslipId(nextSelectedPayslipId);
+      }
+
       if (!manualItemForm.payslip_id && payslips.length > 0) {
         setManualItemForm((prev) => ({ ...prev, payslip_id: payslips[0].id }));
       }
+
+      if (payslips.length === 0) {
+        setSelectedPayrollPayslipId('');
+        setPayrollPayslipDetail(null);
+        setPayrollDetailError('');
+      }
     } catch (err) {
       setPayrollError(err instanceof Error ? err.message : 'Gagal memuat payslips');
+    }
+  };
+
+  const loadPayrollPayslipDetail = async (payslipId: string) => {
+    if (!token || !payslipId || !canManagePayroll) return;
+
+    try {
+      setPayrollDetailLoading(true);
+      setPayrollDetailError('');
+      const detail = await payrollApi.getPayslipDetail(token, payslipId);
+      setPayrollPayslipDetail(detail);
+    } catch (err) {
+      setPayrollDetailError(err instanceof Error ? err.message : 'Gagal memuat detail payslip');
+    } finally {
+      setPayrollDetailLoading(false);
     }
   };
 
@@ -993,9 +1019,9 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
       setPayrollMessage('');
       await payrollApi.generatePeriod(token, selectedPayrollPeriodId);
       await loadPayrollPayslips(selectedPayrollPeriodId);
-      setPayrollMessage('Generate payslips berhasil');
+      setPayrollMessage('Payslip berhasil di-generate dan semua item sudah di-attach');
     } catch (err) {
-      setPayrollError(err instanceof Error ? err.message : 'Gagal generate payslips');
+      setPayrollError(err instanceof Error ? err.message : 'Gagal membuat payslip draft');
     } finally {
       setPayrollActionLoading(false);
     }
@@ -1019,21 +1045,62 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
 
   const handleAddManualPayrollItem = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!token || !manualItemForm.payslip_id) return;
+    if (!token) return;
     try {
       setPayrollActionLoading(true);
       setPayrollError('');
       setPayrollMessage('');
-      await payrollApi.addManualItem(token, manualItemForm.payslip_id, {
-        type: manualItemForm.type,
-        amount: Number(manualItemForm.amount),
-        description: manualItemForm.description,
-      });
-      setManualItemForm((prev) => ({ ...prev, amount: 0, description: '' }));
-      await loadPayrollPayslips(selectedPayrollPeriodId);
-      setPayrollMessage('Item manual berhasil ditambahkan');
+      if (payrollView === 'items') {
+        // create period-level item
+        if (!selectedPayrollPeriodId || !manualItemForm.employee_id) {
+          setPayrollError('Pilih period dan employee terlebih dahulu');
+          return;
+        }
+
+        await payrollApi.addManualItemToPeriod(token, selectedPayrollPeriodId, {
+          employee_id: manualItemForm.employee_id,
+          type: manualItemForm.type,
+          amount: Number(manualItemForm.amount),
+          description: manualItemForm.description,
+        });
+
+        setManualItemForm((prev) => ({ ...prev, employee_id: '', amount: 0, description: '' }));
+        await loadPayrollPayslips(selectedPayrollPeriodId);
+        setPayrollMessage('Item manual berhasil ditambahkan dan langsung attach ke payslip');
+      } else {
+        if (!manualItemForm.payslip_id) return;
+        await payrollApi.addManualItem(token, manualItemForm.payslip_id, {
+          type: manualItemForm.type,
+          amount: Number(manualItemForm.amount),
+          description: manualItemForm.description,
+        });
+
+        setManualItemForm((prev) => ({ ...prev, amount: 0, description: '' }));
+        await loadPayrollPayslips(selectedPayrollPeriodId);
+        setPayrollMessage('Item manual berhasil ditambahkan');
+      }
     } catch (err) {
       setPayrollError(err instanceof Error ? err.message : 'Gagal menambah item manual');
+    } finally {
+      setPayrollActionLoading(false);
+    }
+  };
+
+  const handleDeleteManualPayrollItem = async (payslipId: string, itemId: string) => {
+    if (!token || !canManagePayroll) return;
+
+    try {
+      setPayrollActionLoading(true);
+      setPayrollError('');
+      setPayrollMessage('');
+      await payrollApi.deleteManualItem(token, payslipId, itemId);
+      await loadPayrollPayslips(selectedPayrollPeriodId);
+      if (selectedPayrollPayslipId === payslipId) {
+        await loadPayrollPayslipDetail(payslipId);
+      }
+      setPayrollMessage('Item manual berhasil dihapus');
+    } catch (err) {
+      setPayrollError(err instanceof Error ? err.message : 'Gagal menghapus item manual');
     } finally {
       setPayrollActionLoading(false);
     }
@@ -2147,171 +2214,306 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
       {activeMenu === 'payroll' && canManagePayroll && (
         <section className="panel payroll-panel">
           <h3>Payroll Management</h3>
+          <p className="subtext">Buat period, tambah item manual saat draft, generate payslip, lalu finalize untuk mengunci.</p>
 
           {payrollError && <p className="inline-error">{payrollError}</p>}
           {payrollMessage && <p className="inline-success">{payrollMessage}</p>}
 
-          <form className="crm-form" onSubmit={handleCreatePayrollPeriod}>
-            <div className="form-header">
-              <h4>Buat Payroll Period</h4>
-            </div>
-            <div className="form-row-three">
-              <div className="form-group">
-                <label>Bulan</label>
-                <input
-                  type="number"
-                  min={1}
-                  max={12}
-                  value={periodForm.month}
-                  onChange={(e) => setPeriodForm((prev) => ({ ...prev, month: Number(e.target.value) }))}
-                  required
-                />
-              </div>
-              <div className="form-group">
-                <label>Tahun</label>
-                <input
-                  type="number"
-                  min={2000}
-                  value={periodForm.year}
-                  onChange={(e) => setPeriodForm((prev) => ({ ...prev, year: Number(e.target.value) }))}
-                  required
-                />
-              </div>
-              <div className="form-group">
-                <label>Period Aktif</label>
-                <select
-                  value={selectedPayrollPeriodId}
-                  onChange={(e) => setSelectedPayrollPeriodId(e.target.value)}
-                  disabled={payrollLoading || payrollPeriods.length === 0}
-                >
-                  {payrollPeriods.length === 0 && <option value="">Belum ada period</option>}
-                  {payrollPeriods.map((period) => (
-                    <option key={period.id} value={period.id}>
-                      {String(period.month).padStart(2, '0')}/{period.year} ({period.status})
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <div className="form-actions compact-actions">
-              <button type="submit" className="primary-btn" disabled={payrollActionLoading}>
-                {payrollActionLoading ? 'Menyimpan...' : 'Buat Period'}
-              </button>
-              <button type="button" className="secondary-btn" onClick={handlePreviewPayroll} disabled={payrollActionLoading || !selectedPayrollPeriodId}>
-                Preview
-              </button>
-              <button type="button" className="secondary-btn" onClick={handleGeneratePayroll} disabled={payrollActionLoading || !selectedPayrollPeriodId}>
-                Generate
-              </button>
-              <button type="button" className="danger-btn" onClick={handleFinalizePayroll} disabled={payrollActionLoading || !selectedPayrollPeriodId}>
-                Finalize
-              </button>
-            </div>
-          </form>
-
-          {payrollPreview && (
-            <div className="payroll-preview-table">
-              <h4>Preview ({payrollPreview.workingDays} hari kerja)</h4>
-              <div className="payroll-grid">
-                {payrollPreview.results.map((row) => (
-                  <div key={row.employee.id} className="user-item">
-                    <div>
-                      <strong>{row.employee.full_name}</strong>
-                      <p>
-                        Base: Rp {Number(row.baseSalary).toLocaleString('id-ID')} | Reimburse: Rp {Number(row.total_reimburse).toLocaleString('id-ID')} | Penalti: Rp {Number(row.total_penalty).toLocaleString('id-ID')}
-                      </p>
-                    </div>
-                    <div>
-                      <span className="status-pill">Net: Rp {Number(row.net_salary).toLocaleString('id-ID')}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div className="payroll-preview-table">
-            <h4>Payslips</h4>
-            {payrollPayslips.length === 0 ? (
-              <p>Belum ada payslip di period ini.</p>
-            ) : (
-              <div className="payroll-grid">
-                {payrollPayslips.map((payslip) => (
-                  <div key={payslip.id} className="user-item">
-                    <div>
-                      <strong>{payslip.employee?.full_name || payslip.employee_id}</strong>
-                      <p>
-                        Incentive: Rp {Number(payslip.total_incentive || 0).toLocaleString('id-ID')} | Reimburse: Rp {Number(payslip.total_reimburse || 0).toLocaleString('id-ID')} | Penalty: Rp {Number(payslip.total_penalty || 0).toLocaleString('id-ID')}
-                      </p>
-                    </div>
-                    <div>
-                      <span className="status-pill">Net: Rp {Number(payslip.net_salary || 0).toLocaleString('id-ID')}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+          <div className="form-group" style={{ maxWidth: 320 }}>
+            <label>Menu Payroll</label>
+            <select value={payrollView} onChange={(e) => setPayrollView(e.target.value as 'payslips' | 'items')}>
+              <option value="payslips">Daftar Payslip</option>
+              <option value="items">Tambah Item Manual</option>
+            </select>
           </div>
 
-          <form className="crm-form" onSubmit={handleAddManualPayrollItem}>
-            <div className="form-header">
-              <h4>Tambah Item Manual (Insentif / Penalti / Bonus)</h4>
-            </div>
-            <div className="form-row-three">
-              <div className="form-group">
-                <label>Payslip</label>
-                <select
-                  value={manualItemForm.payslip_id}
-                  onChange={(e) => setManualItemForm((prev) => ({ ...prev, payslip_id: e.target.value }))}
-                  required
-                >
-                  <option value="">Pilih payslip</option>
-                  {payrollPayslips.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.employee?.full_name || p.employee_id}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="form-group">
-                <label>Tipe</label>
-                <select
-                  value={manualItemForm.type}
-                  onChange={(e) => setManualItemForm((prev) => ({ ...prev, type: e.target.value as 'incentive' | 'penalty' | 'bonus' }))}
-                >
-                  <option value="incentive">Incentive</option>
-                  <option value="penalty">Penalty (kerusakan/dll)</option>
-                  <option value="bonus">Bonus</option>
-                </select>
-              </div>
-              <div className="form-group">
-                <label>Nominal</label>
-                <input
-                  type="number"
-                  min={1}
-                  value={manualItemForm.amount}
-                  onChange={(e) => setManualItemForm((prev) => ({ ...prev, amount: Number(e.target.value) }))}
-                  required
-                />
-              </div>
-            </div>
-            <div className="form-row-one">
-              <div className="form-group">
-                <label>Deskripsi</label>
-                <input
-                  value={manualItemForm.description}
-                  onChange={(e) => setManualItemForm((prev) => ({ ...prev, description: e.target.value }))}
-                  placeholder="Contoh: Penalti kerusakan inventaris"
+          {payrollView === 'payslips' && (
+            <>
+              <form className="crm-form" onSubmit={handleCreatePayrollPeriod}>
+                <div className="form-header">
+                  <h4>Buat Payroll Period</h4>
+                </div>
+                <div className="form-row-three">
+                  <div className="form-group">
+                    <label>Bulan</label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={12}
+                      value={periodForm.month}
+                      onChange={(e) => setPeriodForm((prev) => ({ ...prev, month: Number(e.target.value) }))}
+                      required
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Tahun</label>
+                    <input
+                      type="number"
+                      min={2000}
+                      value={periodForm.year}
+                      onChange={(e) => setPeriodForm((prev) => ({ ...prev, year: Number(e.target.value) }))}
+                      required
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>&nbsp;</label>
+                    <button type="submit" className="primary-btn" disabled={payrollActionLoading}>
+                      {payrollActionLoading ? 'Menyimpan...' : 'Buat Period'}
+                    </button>
+                  </div>
+                </div>
+              </form>
 
-                />
+              <div className="crm-form">
+                <div className="form-header">
+                  <h4>Period Aktif</h4>
+                </div>
+                <div className="form-row-three">
+                  <div className="form-group">
+                    <label>Period</label>
+                    <select
+                      value={selectedPayrollPeriodId}
+                      onChange={(e) => setSelectedPayrollPeriodId(e.target.value)}
+                      disabled={payrollLoading || payrollPeriods.length === 0}
+                    >
+                      {payrollPeriods.length === 0 && <option value="">Belum ada period</option>}
+                      {payrollPeriods.map((period) => (
+                        <option key={period.id} value={period.id}>
+                          {String(period.month).padStart(2, '0')}/{period.year} ({period.status})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label>&nbsp;</label>
+                    <button type="button" className="secondary-btn" onClick={handleGeneratePayroll} disabled={payrollActionLoading || !selectedPayrollPeriodId} style={{ width: '100%' }}>
+                      {payrollActionLoading ? 'Generating...' : 'Generate Payslip'}
+                    </button>
+                  </div>
+                  <div className="form-group">
+                    <label>&nbsp;</label>
+                    <button type="button" className="danger-btn" onClick={handleFinalizePayroll} disabled={payrollActionLoading || !selectedPayrollPeriodId} style={{ width: '100%' }}>
+                      Finalize Period
+                    </button>
+                  </div>
+                </div>
               </div>
-            </div>
-            <div className="form-actions compact-actions">
-              <button type="submit" className="primary-btn" disabled={payrollActionLoading || !manualItemForm.payslip_id}>
-                {payrollActionLoading ? 'Menyimpan...' : 'Tambah Item Manual'}
-              </button>
-            </div>
-          </form>
+            </>
+          )}
+
+          {payrollView === 'payslips' && (
+            <>
+              <div className="payroll-preview-table">
+                <h4>Payslips</h4>
+                {payrollPayslips.length > 0 && (
+                  <div className="form-group" style={{ maxWidth: 320, marginBottom: 16 }}>
+                    <label>Pilih Detail Payslip</label>
+                    <select value={selectedPayrollPayslipId} onChange={(e) => setSelectedPayrollPayslipId(e.target.value)}>
+                      <option value="">Pilih payslip</option>
+                      {payrollPayslips.map((payslip) => (
+                        <option key={payslip.id} value={payslip.id}>
+                          {payslip.employee?.full_name || payslip.employee_id}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                {payrollPayslips.length === 0 ? (
+                  <p>Belum ada payslip di period ini.</p>
+                ) : (
+                  <div className="payroll-grid">
+                    {payrollPayslips.map((payslip) => (
+                      <div key={payslip.id} className="user-item">
+                        <div>
+                          <strong>{payslip.employee?.full_name || payslip.employee_id}</strong>
+                          <p>
+                            Incentive: Rp {Number(payslip.total_incentive || 0).toLocaleString('id-ID')} | Reimburse: Rp {Number(payslip.total_reimburse || 0).toLocaleString('id-ID')} | Penalty: Rp {Number(payslip.total_penalty || 0).toLocaleString('id-ID')}
+                          </p>
+                        </div>
+                        <div>
+                          <span className="status-pill">Net: Rp {Number(payslip.net_salary || 0).toLocaleString('id-ID')}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {payrollDetailError && <p className="inline-error">{payrollDetailError}</p>}
+
+              {payrollDetailLoading && <p>Memuat detail payslip...</p>}
+
+              {payrollPayslipDetail && !payrollDetailLoading && (
+                <div className="payroll-preview-table">
+                  <h4>Detail Payslip</h4>
+                  <div className="payroll-grid">
+                    <div className="user-item">
+                      <div>
+                        <strong>{payrollPayslipDetail.payslip.employee?.full_name || payrollPayslipDetail.payslip.employee_id}</strong>
+                        <p>
+                          Base: Rp {Number(payrollPayslipDetail.totals.base_salary || 0).toLocaleString('id-ID')} | Incentive: Rp {Number(payrollPayslipDetail.totals.total_incentive || 0).toLocaleString('id-ID')} | Reimburse: Rp {Number(payrollPayslipDetail.totals.total_reimburse || 0).toLocaleString('id-ID')} | Penalty: Rp {Number(payrollPayslipDetail.totals.total_penalty || 0).toLocaleString('id-ID')}
+                        </p>
+                        <p>
+                          Net: Rp {Number(payrollPayslipDetail.totals.net_salary || 0).toLocaleString('id-ID')}
+                        </p>
+                      </div>
+                      <div>
+                        <span className="status-pill">
+                          {payrollPayslipDetail.payslip.period?.month
+                            ? `${String(payrollPayslipDetail.payslip.period.month).padStart(2, '0')}/${payrollPayslipDetail.payslip.period.year}`
+                            : 'Payslip'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="user-item" style={{ gridColumn: '1 / -1' }}>
+                      <div>
+                        <strong>Breakdown Item</strong>
+                        <div style={{ marginTop: 12, display: 'grid', gap: 8 }}>
+                          {payrollPayslipDetail.items.length === 0 ? (
+                            <p>Tidak ada item detail.</p>
+                          ) : (
+                            payrollPayslipDetail.items.map((item) => (
+                              <div key={item.id} className="summary-item">
+                                <span>{item.type.toUpperCase()} / {item.source}</span>
+                                <strong>Rp {Number(item.amount || 0).toLocaleString('id-ID')}</strong>
+                                {item.description && <p>{item.description}</p>}
+                                {item.source === 'manual' && payrollPeriods.find((period) => period.id === selectedPayrollPeriodId)?.status === 'draft' && (
+                                  <button
+                                    type="button"
+                                    className="danger-btn"
+                                    onClick={() => void handleDeleteManualPayrollItem(payrollPayslipDetail.payslip.id, item.id)}
+                                    disabled={payrollActionLoading}
+                                    style={{ width: 'fit-content' }}
+                                  >
+                                    Hapus Item Manual
+                                  </button>
+                                )}
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          {payrollView === 'items' && (
+            <>
+              <div className="crm-form">
+                <div className="form-header">
+                  <h4>Period</h4>
+                </div>
+                <div className="form-row-three">
+                  <div className="form-group">
+                    <label>Pilih Period</label>
+                    <select
+                      value={selectedPayrollPeriodId}
+                      onChange={(e) => setSelectedPayrollPeriodId(e.target.value)}
+                      disabled={payrollLoading || payrollPeriods.filter((p) => p.status === 'draft').length === 0}
+                    >
+                      {payrollPeriods.filter((p) => p.status === 'draft').length === 0 && <option value="">Belum ada period draft</option>}
+                      {payrollPeriods.filter((p) => p.status === 'draft').map((period) => (
+                        <option key={period.id} value={period.id}>
+                          {String(period.month).padStart(2, '0')}/{period.year}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <form className="crm-form" onSubmit={handleAddManualPayrollItem}>
+                <div className="form-header">
+                  <h4>Tambah Item Manual (Insentif / Penalti)</h4>
+                </div>
+                <div className="form-row-three">
+                  <div className="form-group">
+                    <label>Employee</label>
+                    <select
+                      value={manualItemForm.employee_id}
+                      onChange={(e) => setManualItemForm((prev) => ({ ...prev, employee_id: e.target.value }))}
+                      required
+                    >
+                      <option value="">Pilih employee</option>
+                      {users.filter((u) => u.employee).map((u) => (
+                        <option key={u.id} value={u.employee?.id || ''}>
+                          {u.employee?.full_name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label>Tipe</label>
+                    <select
+                      value={manualItemForm.type}
+                      onChange={(e) => setManualItemForm((prev) => ({ ...prev, type: e.target.value as 'incentive' | 'penalty' }))}
+                    >
+                      <option value="incentive">Incentive</option>
+                      <option value="penalty">Penalty (kerusakan/dll)</option>
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label>Nominal</label>
+                    <input
+                      type="number"
+                      min={1}
+                      value={manualItemForm.amount}
+                      onChange={(e) => setManualItemForm((prev) => ({ ...prev, amount: Number(e.target.value) }))}
+                      required
+                    />
+                  </div>
+                </div>
+                <div className="form-row-one">
+                  <div className="form-group">
+                    <label>Deskripsi</label>
+                    <input
+                      value={manualItemForm.description}
+                      onChange={(e) => setManualItemForm((prev) => ({ ...prev, description: e.target.value }))}
+                      placeholder="Contoh: Penalti kerusakan inventaris"
+                    />
+                  </div>
+                </div>
+                <div className="form-actions compact-actions">
+                  <button type="submit" className="primary-btn" disabled={payrollActionLoading || !selectedPayrollPeriodId || !manualItemForm.employee_id}>
+                    {payrollActionLoading ? 'Menyimpan...' : 'Tambah Item Manual'}
+                  </button>
+                </div>
+              </form>
+
+              {payrollPayslips.length > 0 && (
+                <div className="payroll-preview-table">
+                  <h4>Item Manual di Payslips</h4>
+                  <div className="payroll-grid">
+                    {payrollPayslips.map((payslip) => {
+                      const manualItems = payslip.items?.filter((item) => item.source === 'manual') || [];
+                      return (
+                        <div key={payslip.id} className="user-item">
+                          <div>
+                            <strong>{payslip.employee?.full_name || payslip.employee_id}</strong>
+                            {manualItems.length > 0 ? (
+                              <div style={{ marginTop: 8, display: 'grid', gap: 4 }}>
+                                {manualItems.map((item) => (
+                                  <div key={item.id} style={{ fontSize: 12, color: '#666' }}>
+                                    {item.type.toUpperCase()}: Rp {Number(item.amount || 0).toLocaleString('id-ID')} {item.description && `(${item.description})`}
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <p style={{ fontSize: 12, color: '#999', marginTop: 4 }}>Tidak ada item manual</p>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
         </section>
       )}
 
@@ -2359,7 +2561,7 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
                         Base: Rp {Number(myPayrollDetail.totals.base_salary || 0).toLocaleString('id-ID')} | Incentive: Rp {Number(myPayrollDetail.totals.total_incentive || 0).toLocaleString('id-ID')} | Reimburse: Rp {Number(myPayrollDetail.totals.total_reimburse || 0).toLocaleString('id-ID')} | Penalty: Rp {Number(myPayrollDetail.totals.total_penalty || 0).toLocaleString('id-ID')}
                       </p>
                       <p>
-                        Bonus: Rp {Number(myPayrollDetail.totals.total_bonus || 0).toLocaleString('id-ID')} | Net: Rp {Number(myPayrollDetail.totals.net_salary || 0).toLocaleString('id-ID')}
+                        Net: Rp {Number(myPayrollDetail.totals.net_salary || 0).toLocaleString('id-ID')}
                       </p>
                     </div>
                     <div>

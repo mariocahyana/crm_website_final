@@ -27,16 +27,6 @@ export async function createPeriod(req: Request, res: Response, next: NextFuncti
   }
 }
 
-export async function previewPeriod(req: Request, res: Response, next: NextFunction) {
-  try {
-    const { periodId } = req.params as { periodId: string };
-    const result = await PayrollService.previewPeriod(periodId);
-    sendSuccess(res, result, 'Preview payroll generated');
-  } catch (err) {
-    next(err);
-  }
-}
-
 export async function generatePeriod(req: Request, res: Response, next: NextFunction) {
   try {
     const { periodId } = req.params as { periodId: string };
@@ -115,6 +105,36 @@ export async function addManualItem(req: Request, res: Response, next: NextFunct
       description,
     });
     sendSuccess(res, result, 'Manual payroll item added');
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function addManualItemToPeriod(req: Request, res: Response, next: NextFunction) {
+  try {
+    const actorId = req.authUser?.id;
+    if (!actorId) return sendError(res, 'Not authenticated', 401, 'UNAUTHORIZED');
+    const { periodId } = req.params as { periodId: string };
+    const { employee_id, type, amount, description } = req.body as { employee_id?: string; type?: string; amount?: number; description?: string };
+    const result = await PayrollService.addManualItemToPeriod(actorId, periodId, {
+      employee_id: String(employee_id || ''),
+      type: String(type || ''),
+      amount: Number(amount || 0),
+      description,
+    });
+    sendSuccess(res, result, 'Manual payroll item added to period', 201);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function deleteManualItem(req: Request, res: Response, next: NextFunction) {
+  try {
+    const actorId = req.authUser?.id;
+    if (!actorId) return sendError(res, 'Not authenticated', 401, 'UNAUTHORIZED');
+    const { payslipId, itemId } = req.params as { payslipId: string; itemId: string };
+    const result = await PayrollService.deleteManualItem(actorId, payslipId, itemId);
+    sendSuccess(res, result, 'Manual payroll item deleted');
   } catch (err) {
     next(err);
   }

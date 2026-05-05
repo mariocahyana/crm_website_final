@@ -29,20 +29,19 @@ function normalizeDate(value: Date | string) {
   return d;
 }
 
-function overlapInclusiveDays(aStart: Date | string, aEnd: Date | string, bStart: Date, bEnd: Date) {
+function overlapWorkingDays(aStart: Date | string, aEnd: Date | string, bStart: Date, bEnd: Date) {
   const start = normalizeDate(aStart);
   const end = normalizeDate(aEnd);
   const overlapStart = start > bStart ? start : bStart;
   const overlapEnd = end < bEnd ? end : bEnd;
   if (overlapEnd < overlapStart) return 0;
-  const msPerDay = 24 * 60 * 60 * 1000;
-  return Math.floor((overlapEnd.getTime() - overlapStart.getTime()) / msPerDay) + 1;
+  return countWorkingDays(overlapStart, overlapEnd);
 }
 
 function summarizePayrollItems(items: any[]) {
   return items.reduce((acc, item) => {
     const amount = Number(item.amount || 0);
-    if (item.type === 'incentive' || item.type === 'bonus') acc.totalIncentive += amount;
+    if (item.type === 'incentive') acc.totalIncentive += amount;
     if (item.type === 'penalty') acc.totalPenalty += amount;
     if (item.type === 'reimburse') acc.totalReimburse += amount;
     if (item.type === 'bonus') acc.totalBonus += amount;
@@ -87,97 +86,12 @@ class PayrollService {
     });
   }
 
-  static async previewPeriod(periodId: string) {
-    const period: any = await PayrollPeriod.findByPk(periodId, { raw: true });
-    if (!period) throw new NotFoundError('Payroll period tidak ditemukan');
-
-    const { start, end } = monthRange(period.year, period.month);
-    const workingDays = Math.max(1, countWorkingDays(start, end));
-
-    // fetch employees active
-    const employees = (await Employee.findAll({ where: { is_active: true }, raw: true })) as any[];
-
-    const results: any[] = [];
-
-    for (const emp of employees) {
-      const baseSalary = Number(emp.base_salary || 0);
-
-      // reimbursements: approved and unprocessed within period
-      const reimbursements = (await Reimbursement.scope('unprocessed').findAll({
-        where: {
-          employee_id: emp.id,
-          expense_date: { [Op.between]: [start, end] },
-        },
-        raw: true,
-      })) as any[];
-
-      const totalReimburse = reimbursements.reduce((s: number, r: any) => s + Number(r.amount), 0);
-
-      // unpaid leaves: approved leave requests where leave type is unpaid
-      const leaveRequests = await LeaveRequest.findAll({
-        where: {
-          employee_id: emp.id,
-          status: 'approved',
-          start_date: { [Op.lte]: end },
-          end_date: { [Op.gte]: start },
-        },
-        include: [{ model: LeaveType, as: 'leaveType' }],
-      });
-
-      let unpaidDays = 0;
-      for (const lr of leaveRequests as any[]) {
-        const lt = lr.getDataValue ? lr.getDataValue('leaveType') : lr.leaveType;
-        if (lt && lt.is_paid === false) {
-          const days = overlapInclusiveDays(lr.start_date, lr.end_date, start, end);
-          unpaidDays += Math.max(0, days);
-        }
-      }
-
-      const perDay = baseSalary / workingDays;
-      const unpaidPenalty = unpaidDays * perDay;
-
-      // late penalty: sum late_minutes in attendance
-      const attendances = (await Attendance.findAll({
-        where: {
-          employee_id: emp.id,
-          status: 'late',
-          date: { [Op.between]: [start, end] },
-        },
-        raw: true,
-      })) as any[];
-      const totalLateMinutes = (attendances || []).reduce((s: number, a: any) => s + Number(a.late_minutes || 0), 0);
-      const latePenalty = totalLateMinutes * 10000;
-
-      const totalPenalty = unpaidPenalty + latePenalty;
-
-      const totalIncentive = 0; // manual incentives not included in preview
-
-      const net = baseSalary + totalIncentive + totalReimburse - totalPenalty;
-
-      results.push({
-        employee: emp,
-        baseSalary,
-        total_incentive: totalIncentive,
-        total_reimburse: totalReimburse,
-        unpaid_days: unpaidDays,
-        unpaid_penalty: unpaidPenalty,
-        total_late_minutes: totalLateMinutes,
-        late_penalty: latePenalty,
-        late_rate_per_minute: 10000,
-        total_penalty: totalPenalty,
-        net_salary: net,
-      });
-    }
-
-    return { period, workingDays, results };
-  }
-
   static async generatePeriod(periodId: string, actorId: string) {
     const period: any = await PayrollPeriod.findByPk(periodId, { raw: true });
     if (!period) throw new NotFoundError('Payroll period tidak ditemukan');
 
-    if (period.status === 'paid') {
-      throw new ValidationError('Payroll period yang sudah paid tidak bisa digenerate ulang');
+    if (period.status !== 'draft') {
+      throw new ValidationError('Hanya payroll period draft yang bisa digenerate');
     }
 
     const { start, end } = monthRange(period.year, period.month);
@@ -222,7 +136,7 @@ class PayrollService {
         for (const lr of leaveRequests as any[]) {
           const lt = lr.getDataValue ? lr.getDataValue('leaveType') : lr.leaveType;
           if (lt && lt.is_paid === false) {
-            const days = overlapInclusiveDays(lr.start_date, lr.end_date, start, end);
+            const days = overlapWorkingDays(lr.start_date, lr.end_date, start, end);
             unpaidDays += Math.max(0, days);
           }
         }
@@ -239,8 +153,8 @@ class PayrollService {
           },
           transaction: t,
         });
-        const totalLateMinutes = (attendances || []).reduce((s: number, a: any) => s + Number(a.late_minutes || 0), 0);
-        const latePenalty = totalLateMinutes * 10000;
+        const lateDays = attendances.length; // jumlah hari telat
+        const latePenalty = lateDays * 50000; // Rp 50.000 per hari telat
 
         const totalPenalty = unpaidPenalty + latePenalty;
 
@@ -283,7 +197,7 @@ class PayrollService {
         for (const lr of leaveRequests as any[]) {
           const lt = lr.getDataValue ? lr.getDataValue('leaveType') : lr.leaveType;
           if (lt && lt.is_paid === false) {
-            const days = overlapInclusiveDays(lr.start_date, lr.end_date, start, end);
+            const days = overlapWorkingDays(lr.start_date, lr.end_date, start, end);
             const amount = days * perDay;
             await PayrollItem.create({
               payslip_id: payslip.getDataValue('id'),
@@ -305,10 +219,30 @@ class PayrollService {
             type: 'penalty',
             source: 'auto_late',
             amount: latePenalty,
-            description: `Late penalty (${totalLateMinutes} minutes)`,
+            description: `Late penalty (${lateDays} days @ Rp 50.000/day)`,
             created_by: actorId,
           }, { transaction: t });
         }
+
+        // attach any manual items that were created for this period and employee (payslip_id IS NULL)
+        const periodItems = await PayrollItem.findAll({
+          where: {
+            payroll_period_id: periodId,
+            employee_id: emp.id,
+            source: 'manual',
+            payslip_id: null,
+          },
+          transaction: t,
+        });
+
+        for (const pi of periodItems) {
+          try {
+            await pi.update({ payslip_id: payslip.getDataValue('id') }, { transaction: t });
+          } catch {}
+        }
+
+        // recalculate totals to include attached manual items
+        await this.recalculatePayslipTotals(payslip.getDataValue('id'), t);
 
         createdPayslips.push(payslip.toJSON());
       }
@@ -435,9 +369,9 @@ class PayrollService {
       throw new ValidationError('Hanya period draft yang bisa ditambah item manual');
     }
 
-    const allowedTypes = ['incentive', 'penalty', 'bonus'];
+    const allowedTypes = ['incentive', 'penalty'];
     if (!allowedTypes.includes(input.type)) {
-      throw new ValidationError('type harus salah satu: incentive, penalty, bonus');
+      throw new ValidationError('type harus salah satu: incentive, penalty');
     }
 
     const amount = Number(input.amount);
@@ -463,11 +397,233 @@ class PayrollService {
     });
   }
 
+  static async addManualItemToPeriod(actorId: string, periodId: string, input: { employee_id: string; type: string; amount: number; description?: string }) {
+    const period = await PayrollPeriod.findByPk(periodId);
+    if (!period) throw new NotFoundError('Payroll period tidak ditemukan');
+    if (period.getDataValue('status') !== 'draft') {
+      throw new ValidationError('Hanya period draft yang bisa ditambah item manual');
+    }
+
+    const allowedTypes = ['incentive', 'penalty'];
+    if (!allowedTypes.includes(input.type)) {
+      throw new ValidationError('type harus salah satu: incentive, penalty');
+    }
+
+    const amount = Number(input.amount);
+    if (!(amount > 0)) {
+      throw new ValidationError('amount harus lebih besar dari 0');
+    }
+
+    const employee = await Employee.findByPk(input.employee_id);
+    if (!employee) throw new NotFoundError('Employee tidak ditemukan');
+
+    return await sequelize.transaction(async (t: any) => {
+      // check if payslips already generated
+      let payslip = await Payslip.findOne({
+        where: {
+          period_id: periodId,
+          employee_id: input.employee_id,
+        },
+        transaction: t,
+      });
+
+      // if payslip doesn't exist, auto-generate payslips for period first
+      if (!payslip) {
+        // generate all payslips
+        const { start, end } = monthRange(period.getDataValue('year'), period.getDataValue('month'));
+        const workingDays = Math.max(1, countWorkingDays(start, end));
+
+        const employees = (await Employee.findAll({ where: { is_active: true }, raw: true, transaction: t })) as any[];
+
+        for (const emp of employees) {
+          const baseSalary = Number(emp.base_salary || 0);
+
+          const reimbursements = await Reimbursement.scope('unprocessed').findAll({
+            where: {
+              employee_id: emp.id,
+              expense_date: { [Op.between]: [start, end] },
+            },
+            transaction: t,
+          });
+          const totalReimburse = reimbursements.reduce((s: number, r: any) => s + Number(r.amount), 0);
+
+          const leaveRequests = await LeaveRequest.findAll({
+            where: {
+              employee_id: emp.id,
+              status: 'approved',
+              start_date: { [Op.lte]: end },
+              end_date: { [Op.gte]: start },
+            },
+            include: [{ model: LeaveType, as: 'leaveType' }],
+            transaction: t,
+          });
+
+          let unpaidDays = 0;
+          for (const lr of leaveRequests as any[]) {
+            const lt = lr.getDataValue ? lr.getDataValue('leaveType') : lr.leaveType;
+            if (lt && lt.is_paid === false) {
+              const days = overlapWorkingDays(lr.start_date, lr.end_date, start, end);
+              unpaidDays += Math.max(0, days);
+            }
+          }
+
+          const perDay = baseSalary / workingDays;
+          const unpaidPenalty = unpaidDays * perDay;
+
+          const attendances = await Attendance.findAll({
+            where: {
+              employee_id: emp.id,
+              status: 'late',
+              date: { [Op.between]: [start, end] },
+            },
+            transaction: t,
+          });
+          const lateDays = attendances.length; // jumlah hari telat
+          const latePenalty = lateDays * 50000; // Rp 50.000 per hari telat
+
+          const totalPenalty = unpaidPenalty + latePenalty;
+          const totalIncentive = 0;
+          const net = baseSalary + totalIncentive + totalReimburse - totalPenalty;
+
+          const ps = await Payslip.create({
+            employee_id: emp.id,
+            period_id: periodId,
+            base_salary: baseSalary,
+            total_incentive: totalIncentive,
+            total_penalty: totalPenalty,
+            total_bonus: 0,
+            total_reimburse: totalReimburse,
+            net_salary: net,
+          }, { transaction: t });
+
+          // create payroll items for reimbursements
+          for (const r of reimbursements as any[]) {
+            const item = await PayrollItem.create({
+              payslip_id: ps.getDataValue('id'),
+              type: 'reimburse',
+              source: 'auto_reimburse',
+              amount: r.amount,
+              description: `Auto reimburse: ${r.category}`,
+              ref_id: r.id,
+              ref_type: 'Reimbursement',
+              created_by: actorId,
+            }, { transaction: t });
+            try {
+              await r.update({ payroll_item_id: item.getDataValue('id') }, { transaction: t });
+            } catch {}
+          }
+
+          // create payroll items for unpaid leave
+          for (const lr of leaveRequests as any[]) {
+            const lt = lr.getDataValue ? lr.getDataValue('leaveType') : lr.leaveType;
+            if (lt && lt.is_paid === false) {
+              const days = overlapWorkingDays(lr.start_date, lr.end_date, start, end);
+              const amount = days * perDay;
+              await PayrollItem.create({
+                payslip_id: ps.getDataValue('id'),
+                type: 'penalty',
+                source: 'auto_leave',
+                amount,
+                description: `Unpaid leave deduction (${days} days)`,
+                ref_id: lr.id,
+                ref_type: 'LeaveRequest',
+                created_by: actorId,
+              }, { transaction: t });
+            }
+          }
+
+          // create payroll item for late penalty
+          if (latePenalty > 0) {
+            await PayrollItem.create({
+              payslip_id: ps.getDataValue('id'),
+              type: 'penalty',
+              source: 'auto_late',
+              amount: latePenalty,
+              description: `Late penalty (${lateDays} days @ Rp 50.000/day)`,
+              created_by: actorId,
+            }, { transaction: t });
+          }
+
+          // set payslip for matching employee
+          if (emp.id === input.employee_id) {
+            payslip = ps;
+          }
+        }
+
+        // ensure payslip exists for target employee
+        if (!payslip) {
+          throw new Error('Payslip gagal dibuat untuk employee');
+        }
+      }
+
+      // now create the manual item and attach to payslip
+      const createdItem = await PayrollItem.create({
+        payslip_id: payslip!.getDataValue('id'),
+        payroll_period_id: periodId,
+        employee_id: input.employee_id,
+        type: input.type,
+        source: 'manual',
+        amount,
+        description: input.description || null,
+        created_by: actorId,
+      }, { transaction: t });
+
+      // recalculate payslip totals
+      await this.recalculatePayslipTotals(payslip!.getDataValue('id'), t);
+
+      // return updated payslip
+      return await Payslip.findByPk(payslip!.getDataValue('id'), {
+        include: [
+          { model: Employee, as: 'employee', attributes: ['id', 'employee_number', 'full_name', 'base_salary'] },
+          { model: PayrollItem, as: 'items' },
+        ],
+        transaction: t,
+      });
+    });
+  }
+
+  static async deleteManualItem(actorId: string, payslipId: string, itemId: string) {
+    const payslip = await Payslip.findByPk(payslipId);
+    if (!payslip) throw new NotFoundError('Payslip tidak ditemukan');
+
+    const period = await PayrollPeriod.findByPk(payslip.getDataValue('period_id'));
+    if (!period) throw new NotFoundError('Payroll period tidak ditemukan');
+    if (period.getDataValue('status') !== 'draft') {
+      throw new ValidationError('Hanya period draft yang bisa diubah');
+    }
+
+    const item = await PayrollItem.findOne({
+      where: {
+        id: itemId,
+        payslip_id: payslipId,
+        source: 'manual',
+      },
+    });
+
+    if (!item) {
+      throw new NotFoundError('Manual payroll item tidak ditemukan');
+    }
+
+    await sequelize.transaction(async (t: any) => {
+      await item.destroy({ transaction: t });
+      await this.recalculatePayslipTotals(payslipId, t);
+    });
+
+    return Payslip.findByPk(payslipId, {
+      include: [{ model: PayrollItem, as: 'items' }],
+    });
+  }
+
   static async finalizePeriod(periodId: string) {
     const period = await PayrollPeriod.findByPk(periodId);
     if (!period) throw new NotFoundError('Payroll period tidak ditemukan');
-    if (period.getDataValue('status') === 'paid') {
-      throw new ValidationError('Period yang sudah paid tidak bisa difinalize ulang');
+    if (period.getDataValue('status') !== 'draft') {
+      throw new ValidationError('Hanya period draft yang bisa difinalize');
+    }
+
+    const payslipsCount = await Payslip.count({ where: { period_id: periodId } });
+    if (payslipsCount === 0) {
+      throw new ValidationError('Generate payslip terlebih dahulu sebelum finalize');
     }
 
     await period.update({ status: 'finalized', finalized_at: new Date() });
@@ -485,6 +641,7 @@ class PayrollService {
     });
 
     let totalIncentive = 0;
+    let totalBonus = 0;
     let totalPenalty = 0;
     let totalReimburse = 0;
 
@@ -492,17 +649,17 @@ class PayrollService {
       const amount = Number(item.amount || 0);
       if (item.type === 'incentive') totalIncentive += amount;
       if (item.type === 'penalty') totalPenalty += amount;
-      if (item.type === 'bonus') totalIncentive += amount;
+      if (item.type === 'bonus') totalBonus += amount;
       if (item.type === 'reimburse') totalReimburse += amount;
     }
 
     const baseSalary = Number(payslip.getDataValue('base_salary') || 0);
-    const netSalary = baseSalary + totalIncentive + totalReimburse - totalPenalty;
+    const netSalary = baseSalary + totalIncentive + totalBonus + totalReimburse - totalPenalty;
 
     await payslip.update({
       total_incentive: totalIncentive,
       total_penalty: totalPenalty,
-      total_bonus: 0,
+      total_bonus: totalBonus,
       total_reimburse: totalReimburse,
       net_salary: netSalary,
     }, { transaction });

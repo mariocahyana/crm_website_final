@@ -98,12 +98,18 @@ class LeaveService {
     }
 
     if (auth.role === 'manager') {
+      const manager = await Employee.findByPk(auth.employeeId, {
+        attributes: ['id', 'department_id'],
+        raw: true,
+      }) as { id: string; department_id: string | null } | null;
+
       include[1] = {
         ...include[1],
         where: {
           [Op.or]: [
             { id: auth.employeeId },
             { manager_id: auth.employeeId },
+            ...(manager?.department_id ? [{ department_id: manager.department_id }] : []),
           ],
         },
       } as any;
@@ -206,6 +212,10 @@ class LeaveService {
     const isSameDepartmentManager = auth.role === 'manager'
       && !!approver?.department_id
       && approver.department_id === employee?.department_id;
+
+    if (isAdmin && employee?.id === auth.employeeId) {
+      throw new ForbiddenError('Admin tidak dapat memproses request cuti miliknya sendiri');
+    }
 
     if (!isAdmin && !isDirectManager && !isSameDepartmentManager) {
       throw new ForbiddenError('Tidak punya akses untuk memproses request ini');
