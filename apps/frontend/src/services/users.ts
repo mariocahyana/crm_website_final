@@ -78,7 +78,46 @@ function getAuthHeader(token: string) {
   };
 }
 
+export interface UserTreeNode {
+  id: string;
+  email: string;
+  role: 'admin' | 'staff' | 'manager';
+  employee: {
+    id: string;
+    employee_number: string;
+    full_name: string;
+    job_title: string | null;
+    department_id: string | null;
+    manager_id: string | null;
+    photo_url: string | null;
+  } | null;
+}
+
+export interface ManagerTreeNode extends UserTreeNode {
+  subordinates: UserTreeNode[];
+}
+
+export interface UserTreeData {
+  admins: UserTreeNode[];
+  managers: ManagerTreeNode[];
+  unassigned_staff: UserTreeNode[];
+}
+
 export const usersApi = {
+  async getUserTree(token: string): Promise<UserTreeData> {
+    const res = await fetch(`${API_BASE_URL}/users/tree`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.message || 'Gagal mengambil user tree');
+    }
+
+    const payload = await res.json();
+    return payload.data;
+  },
+
   async listUsers(token: string): Promise<ManagedUser[]> {
     const res = await fetch(`${API_BASE_URL}/users`, {
       headers: { Authorization: `Bearer ${token}` },

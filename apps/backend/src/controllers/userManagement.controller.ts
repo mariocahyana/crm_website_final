@@ -2,6 +2,15 @@ import { Request, Response, NextFunction } from 'express';
 import UserManagementService from '../services/userManagement.service';
 import { sendSuccess, sendError } from '../utils/response';
 
+export async function getUserTree(_req: Request, res: Response, next: NextFunction) {
+  try {
+    const tree = await UserManagementService.getUserTree();
+    sendSuccess(res, tree, 'User tree berhasil diambil');
+  } catch (err) {
+    next(err);
+  }
+}
+
 export async function listUsers(_req: Request, res: Response, next: NextFunction) {
   try {
     const users = await UserManagementService.listUsers();
