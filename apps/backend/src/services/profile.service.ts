@@ -3,6 +3,26 @@ import { ValidationError, NotFoundError } from '../utils/errors';
 import { getReceiptUrl } from '../middlewares/upload';
 
 class ProfileService {
+  private static async applyEmployeeUpdate(actorId: string, employeeId: string, filtered: any, action: string, clientIp: string) {
+    const employee = await Employee.findByPk(employeeId);
+    if (!employee) {
+      throw new NotFoundError('Employee not found');
+    }
+
+    await employee.update(filtered);
+
+    try {
+      await ActivityLog.create({
+        actor_id: actorId,
+        action,
+        target_type: 'Employee',
+        target_id: employeeId,
+        ip_address: clientIp,
+      });
+    } catch {}
+
+    return employee;
+  }
   static async updateMyProfile(
     userId: string,
     employeeId: string,
@@ -25,23 +45,7 @@ class ProfileService {
       filtered.photo_url = getReceiptUrl(photoFile.filename);
     }
 
-    const employee = await Employee.findByPk(employeeId);
-    if (!employee) {
-      throw new NotFoundError('Employee not found');
-    }
-
-    await employee.update(filtered);
-
-    // Log activity
-    try {
-      await ActivityLog.create({
-        actor_id: userId,
-        action: 'UPDATE_PROFILE_SELF',
-        target_type: 'Employee',
-        target_id: employeeId,
-        ip_address: clientIp,
-      });
-    } catch {}
+    const employee = await ProfileService.applyEmployeeUpdate(userId, employeeId, filtered, 'UPDATE_PROFILE_SELF', clientIp);
 
     return {
       message: 'Profile berhasil diperbarui',
@@ -67,23 +71,7 @@ class ProfileService {
       filtered.photo_url = getReceiptUrl(photoFile.filename);
     }
 
-    const employee = await Employee.findByPk(employeeId);
-    if (!employee) {
-      throw new NotFoundError('Employee not found');
-    }
-
-    await employee.update(filtered);
-
-    // Log activity
-    try {
-      await ActivityLog.create({
-        actor_id: actorId,
-        action: 'UPDATE_PROFILE_ADMIN',
-        target_type: 'Employee',
-        target_id: employeeId,
-        ip_address: clientIp,
-      });
-    } catch {}
+    const employee = await ProfileService.applyEmployeeUpdate(actorId, employeeId, filtered, 'UPDATE_PROFILE_ADMIN', clientIp);
 
     return {
       message: 'Profile employee berhasil diperbarui',

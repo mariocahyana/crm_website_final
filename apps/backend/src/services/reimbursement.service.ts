@@ -1,5 +1,6 @@
 import { Op } from 'sequelize';
 import { ActivityLog, Employee, Reimbursement } from '../models/index';
+import notifications from './notifications.service';
 import { ForbiddenError, NotFoundError, ValidationError } from '../utils/errors';
 import { getReceiptUrl, deleteReceiptFile } from '../middlewares/upload';
 
@@ -209,6 +210,15 @@ class ReimbursementService {
         target_id: reimbursementId,
         payload: { decline_reason: sanitizeText(input.decline_reason) },
         ip_address: clientIp,
+      });
+    } catch {}
+
+    // Notify clients so payslips / my payslips update
+    try {
+      notifications.emitPayslipChange({
+        action: input.status === 'approved' ? 'reimbursement_approved' : 'reimbursement_declined',
+        employee_id: reimbursement.getDataValue('employee_id'),
+        reimbursement_id: reimbursementId,
       });
     } catch {}
 

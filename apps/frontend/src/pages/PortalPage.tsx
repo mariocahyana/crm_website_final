@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import { auth } from '../services/auth';
+import * as bootstrapApi from '../services/bootstrap';
 import { attendanceApi, type AdminAttendanceQrCode } from '../services/attendance';
 import { AttendanceScanner } from '../components/AttendanceScanner';
 import { leavesApi, type LeaveRequest, type LeaveType } from '../services/leaves';
@@ -155,6 +156,7 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
     managers: [],
   });
   const hasLoadedAdminDataRef = useRef(false);
+  const hasLoadedBootstrapRef = useRef(false);
 
   const [form, setForm] = useState({
     full_name: '',
@@ -220,6 +222,96 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
   const receiptInputRef = useRef<HTMLInputElement | null>(null);
   const photoInputRef = useRef<HTMLInputElement | null>(null);
   const token = auth.getToken();
+
+  const loadBootstrap = async () => {
+    if (!token) return;
+    try {
+      const data: any = await bootstrapApi.getBootstrap(token);
+
+      // me is already available from currentUser, but keep in sync
+      // Leaves
+      if (data.leaveTypes) setLeaveTypes(data.leaveTypes);
+      if (data.leaveRequests) setLeaveRequests(data.leaveRequests);
+
+      // Reimbursements
+      if (data.reimbursements) setReimbursementRequests(data.reimbursements);
+
+      // Admin-only data
+      if (data.users) setUsers(data.users);
+      if (data.options) setOptions(data.options);
+      if (data.payrollPeriods) setPayrollPeriods(data.payrollPeriods);
+
+      // Attendance QR (admin)
+      if (data.attendanceQr && data.attendanceQr.token) {
+        try {
+          const qrDataUrl = await QRCode.toDataURL(data.attendanceQr.token, {
+            width: 260,
+            margin: 1,
+            errorCorrectionLevel: 'M',
+          });
+          setAttendanceQr({ ...data.attendanceQr, qrDataUrl });
+        } catch (e) {
+          setAttendanceQr({ ...data.attendanceQr, qrDataUrl: '' });
+        }
+      }
+
+      // My payslips for staff
+      if (data.myPayslips) {
+        setMyPayrollPayslips(data.myPayslips);
+        if (!selectedMyPayslipId && data.myPayslips.length > 0) {
+          setSelectedMyPayslipId(data.myPayslips[0].id);
+        }
+      }
+
+      hasLoadedBootstrapRef.current = true;
+    } catch (err) {
+      console.error('Bootstrap load failed', err);
+    }
+  };
+
+  useEffect(() => {
+    if (!token || hasLoadedBootstrapRef.current) return;
+    void loadBootstrap();
+
+    // Open SSE stream to receive payslip change notifications
+    try {
+      const url = `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api'}/stream?token=${encodeURIComponent(token)}`;
+      const es = new EventSource(url);
+      es.addEventListener('payslip_changed', async (ev: MessageEvent) => {
+        try {
+          const payload = JSON.parse((ev as any).data);
+          // If current user is the affected employee, refresh my payslips
+          if (payload.employee_id && currentUser.employee?.id === payload.employee_id) {
+            try {
+              const myPayslips = await payrollApi.listMyPayslips(token);
+              setMyPayrollPayslips(myPayslips || []);
+            } catch (e) { console.error('Failed refreshing my payslips', e); }
+          }
+
+          // If admin viewing payroll, refresh current period/payslips
+          if (currentUser.user.role === 'admin') {
+            try {
+              await loadPayrollPeriods();
+              if (selectedPayrollPeriodId) {
+                await loadPayrollPayslips(selectedPayrollPeriodId);
+              }
+            } catch (e) { console.error('Failed refreshing payroll after notification', e); }
+          }
+        } catch (e) { console.error('Invalid SSE payload', e); }
+      });
+
+      es.onerror = (e) => {
+        // keep silently
+        console.warn('SSE error', e);
+      };
+
+      return () => {
+        try { es.close(); } catch {}
+      };
+    } catch (e) {
+      console.error('Failed to open SSE', e);
+    }
+  }, [token]);
 
   const getDefaultProfileForm = () => ({
     full_name: currentUser.employee?.full_name || '',
@@ -721,7 +813,7 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
   };
 
   useEffect(() => {
-    if (!canManageUsers || !token || hasLoadedAdminDataRef.current) {
+    if (!canManageUsers || !token || hasLoadedAdminDataRef.current || hasLoadedBootstrapRef.current) {
       return;
     }
 
@@ -773,6 +865,7 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
   };
 
   useEffect(() => {
+    if (hasLoadedBootstrapRef.current) return;
     void loadLeaves();
   }, [token]);
 
@@ -792,6 +885,7 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
   };
 
   useEffect(() => {
+    if (hasLoadedBootstrapRef.current) return;
     void loadReimbursements();
   }, [token]);
 
@@ -873,13 +967,14 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
   };
 
   useEffect(() => {
-    if (activeMenu !== 'attendance-qr' || !canManageAttendanceQr || !token) {
+    if (activeMenu !== 'attendance-qr' || !canManageAttendanceQr || !token || hasLoadedBootstrapRef.current) {
       return;
     }
     void loadAttendanceQr();
   }, [activeMenu, canManageAttendanceQr, token]);
 
   useEffect(() => {
+    if (hasLoadedBootstrapRef.current) return;
     void loadPayrollPeriods();
   }, [token, canManagePayroll]);
 
@@ -920,7 +1015,7 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
   };
 
   useEffect(() => {
-    if (activeMenu !== 'my-payroll') return;
+    if (activeMenu !== 'my-payroll' || hasLoadedBootstrapRef.current) return;
     void loadMyPayrollPayslips();
   }, [activeMenu, token, canViewMyPayroll]);
 

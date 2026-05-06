@@ -1,5 +1,6 @@
 import { Op } from 'sequelize';
 import { LeaveType, LeaveRequest, Employee, ActivityLog } from '../models/index';
+import notifications from './notifications.service';
 import { ForbiddenError, NotFoundError, ValidationError } from '../utils/errors';
 
 type UserRole = 'admin' | 'staff' | 'manager';
@@ -236,6 +237,17 @@ class LeaveService {
         target_id: requestId,
         payload: { decline_reason: sanitizeText(input.decline_reason) },
         ip_address: clientIp,
+      });
+    } catch {}
+
+    // Emit notification so clients can refresh payslips
+    try {
+      notifications.emitPayslipChange({
+        action: input.status === 'approved' ? 'leave_approved' : 'leave_declined',
+        employee_id: request.getDataValue('employee_id'),
+        request_id: requestId,
+        start_date: request.getDataValue('start_date'),
+        end_date: request.getDataValue('end_date'),
       });
     } catch {}
 

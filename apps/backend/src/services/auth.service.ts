@@ -23,51 +23,46 @@ class AuthService {
 
   static async login({ email, password }: any) {
     const user = await User.unscoped().findOne({
-      where: { email, is_active: true },
+      where: { email },
       attributes: ['id', 'email', 'password_hash', 'role', 'is_active'],
-      raw: true,
-    }) as AuthUserRecord | null;
-    
-    if (!user) {
+      include: [
+        {
+          model: Employee,
+          as: 'employee',
+          attributes: ['id', 'full_name', 'user_id'],
+        },
+      ],
+    });
+
+    if (!user || !user.getDataValue('is_active')) {
       throw new UnauthorizedError('Akun Anda telah dinonaktifkan atau kredensial tidak valid');
     }
-    
-    const ok = await comparePassword(password, user.password_hash);
+
+    const ok = await comparePassword(password, user.getDataValue('password_hash'));
     if (!ok) throw new UnauthorizedError('Invalid credentials');
     
-    // Get employee data
-    let employee = null;
-    try {
-      const emp = await Employee.findOne({
-        where: { user_id: user.id },
-      });
-      if (emp) {
-        employee = emp.toJSON();
-      }
-    } catch {}
+    // extract employee (if included)
+    const empIncluded = user.get('employee') as any | null;
 
     const token = signJwt({
-      id: user.id,
-      role: user.role,
-      employeeId: employee?.id,
+      id: user.getDataValue('id'),
+      role: user.getDataValue('role'),
+      employeeId: empIncluded?.id,
     });
-    
-    // update last login
+
+    // update last login on instance for single-row update
     try {
-      await User.unscoped().update(
-        { last_login_at: new Date() },
-        { where: { id: user.id } }
-      );
+      await user.update({ last_login_at: new Date() });
     } catch {}
-    
+
     return {
       token,
       user: {
-        id: user.id,
-        email: user.email,
-        role: user.role,
+        id: user.getDataValue('id'),
+        email: user.getDataValue('email'),
+        role: user.getDataValue('role'),
       },
-      employee,
+      employee: empIncluded ? empIncluded : null,
     };
   }
 
@@ -97,29 +92,29 @@ class AuthService {
   static async getMe(userId: string) {
     const user = await User.unscoped().findByPk(userId, {
       attributes: ['id', 'email', 'role', 'is_active'],
-      raw: true,
-    }) as Omit<AuthUserRecord, 'password_hash'> | null;
-    
+      include: [
+        {
+          model: Employee,
+          as: 'employee',
+          attributes: ['id', 'full_name', 'user_id'],
+        },
+      ],
+    }) as any | null;
+
     if (!user) throw new NotFoundError('User not found');
-    if (!user.is_active) {
+    if (!user.getDataValue('is_active')) {
       throw new UnauthorizedError('Akun Anda telah dinonaktifkan');
     }
 
-    let employee = null;
-    try {
-      const emp = await Employee.findOne({ where: { user_id: userId } });
-      if (emp) {
-        employee = emp.toJSON();
-      }
-    } catch {}
+    const empIncluded = user.get('employee') as any | null;
 
     return {
       user: {
-        id: user.id,
-        email: user.email,
-        role: user.role,
+        id: user.getDataValue('id'),
+        email: user.getDataValue('email'),
+        role: user.getDataValue('role'),
       },
-      employee,
+      employee: empIncluded ? empIncluded : null,
     };
   }
 }

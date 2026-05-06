@@ -71,6 +71,8 @@ EmployeeScheduleModel.belongsTo(WorkScheduleModel, { foreignKey: 'schedule_id', 
 
 UserModel.hasMany(QrTokenModel, { foreignKey: 'created_by', as: 'qrTokens' });
 QrTokenModel.belongsTo(UserModel, { foreignKey: 'created_by', as: 'creator' });
+UserModel.hasMany(QrTokenModel, { foreignKey: 'scanned_by', as: 'scannedQrTokens' });
+QrTokenModel.belongsTo(UserModel, { foreignKey: 'scanned_by', as: 'scanner' });
 
 LeaveTypeModel.hasMany(LeaveRequestModel, { foreignKey: 'leave_type_id', as: 'requests' });
 LeaveRequestModel.belongsTo(LeaveTypeModel, { foreignKey: 'leave_type_id', as: 'leaveType' });
