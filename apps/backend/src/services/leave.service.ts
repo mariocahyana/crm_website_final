@@ -178,7 +178,9 @@ class LeaveService {
         target_id: request.getDataValue('id'),
         ip_address: clientIp,
       });
-    } catch {}
+    } catch (error) {
+      console.error('Failed to write leave create activity log', error);
+    }
 
     return LeaveRequest.findByPk(request.getDataValue('id'), {
       include: includeRequestRelations(),
@@ -254,7 +256,9 @@ class LeaveService {
         payload: { decline_reason: sanitizeText(input.decline_reason) },
         ip_address: clientIp,
       });
-    } catch {}
+    } catch (error) {
+      console.error('Failed to emit leave approval notification', error);
+    }
 
     // Emit notification so clients can refresh payslips
     try {
@@ -300,7 +304,9 @@ class LeaveService {
         target_id: requestId,
         ip_address: clientIp,
       });
-    } catch {}
+    } catch (error) {
+      console.error('Failed to write leave cancel activity log', error);
+    }
 
     return LeaveRequest.findByPk(requestId, {
       include: includeRequestRelations(),
