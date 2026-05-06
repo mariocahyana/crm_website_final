@@ -273,6 +273,13 @@ describe('payroll.service', () => {
 
   describe('getPayslipDetail', () => {
     it('returns complete payslip details with items', async () => {
+      const mockItems = [
+        { type: 'incentive', amount: 500000 },
+        { type: 'bonus', amount: 300000 },
+        { type: 'reimburse', amount: 100000 },
+        { type: 'penalty', amount: 200000 },
+      ];
+
       const mockPayslip = {
         id: 'payslip-1',
         employee_id: 'emp-1',
@@ -290,6 +297,7 @@ describe('payroll.service', () => {
             total_bonus: 300000,
             total_reimburse: 100000,
             net_salary: 5700000,
+            period: { id: 'period-1', status: 'finalized', year: 2026, month: 5 },
           };
           return data[key];
         },
@@ -303,7 +311,7 @@ describe('payroll.service', () => {
           total_reimburse: 100000,
           net_salary: 5700000,
           period: { id: 'period-1', status: 'finalized', year: 2026, month: 5 },
-          items: [],
+          items: mockItems,
         }),
       };
 
@@ -341,6 +349,12 @@ describe('payroll.service', () => {
         total_bonus: 0,
         total_reimburse: 0,
         net_salary: 5000000,
+        getDataValue: (key: string) => {
+          const data: any = {
+            period: { id: 'period-1', status: 'finalized', year: 2026, month: 5 },
+          };
+          return data[key];
+        },
         toJSON: () => ({
           id: 'payslip-1',
           employee_id: 'emp-1',
@@ -350,6 +364,7 @@ describe('payroll.service', () => {
           total_bonus: 0,
           total_reimburse: 0,
           net_salary: 5000000,
+          items: [],
         }),
       };
 

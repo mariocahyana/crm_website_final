@@ -29,7 +29,7 @@ class AuthService {
         {
           model: Employee,
           as: 'employee',
-          attributes: ['id', 'full_name', 'user_id'],
+          attributes: ['id', 'full_name', 'user_id', 'phone', 'address', 'photo_url', 'join_date', 'job_title'],
         },
       ],
     });
@@ -96,7 +96,7 @@ class AuthService {
         {
           model: Employee,
           as: 'employee',
-          attributes: ['id', 'full_name', 'user_id'],
+          attributes: ['id', 'full_name', 'user_id', 'phone', 'address', 'photo_url', 'join_date', 'job_title'],
         },
       ],
     }) as any | null;

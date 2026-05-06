@@ -5,7 +5,7 @@ import { sendError, sendSuccess } from '../utils/response';
 function getAuth(req: Request) {
   const userId = req.authUser?.id;
   const role = req.authUser?.role as any;
-  const employeeId = req.authUser?.employeeId || null;
+  const employeeId = req.authUser?.employeeId || undefined;
 
   if (!userId || !role) return null;
   return { userId, role, employeeId };

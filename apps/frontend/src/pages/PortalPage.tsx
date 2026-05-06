@@ -315,6 +315,18 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
     }
   }, [token]);
 
+  // Sync profile form with currentUser.employee data
+  useEffect(() => {
+    if (currentUser.employee) {
+      setProfileForm((prev) => ({
+        ...prev,
+        full_name: currentUser.employee?.full_name || '',
+        phone: currentUser.employee?.phone || '',
+        address: currentUser.employee?.address || '',
+      }));
+    }
+  }, [currentUser.employee?.id, currentUser.employee?.full_name, currentUser.employee?.phone, currentUser.employee?.address]);
+
   const getDefaultProfileForm = () => ({
     full_name: currentUser.employee?.full_name || '',
     phone: currentUser.employee?.phone || '',
@@ -1790,7 +1802,7 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
                 <label>Tanggal Bergabung</label>
                 <input
                   type="text"
-                  value={currentUser.employee.join_date ? new Date(currentUser.employee.join_date).toLocaleDateString('id-ID') : '-'}
+                  value={currentUser.employee?.join_date ? new Date(currentUser.employee.join_date).toLocaleDateString('id-ID') : '-'}
                   disabled={true}
                   style={{ backgroundColor: '#f5f5f5' }}
                 />
@@ -1799,7 +1811,7 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
                 <label>Jabatan</label>
                 <input
                   type="text"
-                  value={currentUser.employee.job_title || '-'}
+                  value={currentUser.employee?.job_title || '-'}
                   disabled={true}
                   style={{ backgroundColor: '#f5f5f5' }}
                 />

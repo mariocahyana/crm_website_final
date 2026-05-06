@@ -4,6 +4,30 @@ import * as passwordUtils from '../utils/password';
 import * as jwtUtils from '../utils/jwt';
 import AuthService from './auth.service';
 
+function makeMockUser(data: {
+  id: string;
+  email: string;
+  password_hash?: string;
+  role: 'admin' | 'staff' | 'manager';
+  is_active: boolean;
+  employee?: any | null;
+}) {
+  return {
+    update: jest.fn().mockResolvedValue({}),
+    getDataValue: (key: string) => {
+      const values: Record<string, any> = {
+        id: data.id,
+        email: data.email,
+        password_hash: data.password_hash,
+        role: data.role,
+        is_active: data.is_active,
+      };
+      return values[key];
+    },
+    get: (key: string) => (key === 'employee' ? (data.employee ?? null) : undefined),
+  };
+}
+
 describe('AuthService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -18,22 +42,26 @@ describe('AuthService', () => {
       jest.spyOn(passwordUtils, 'comparePassword').mockResolvedValue(true);
       jest.spyOn(jwtUtils, 'signJwt').mockReturnValue('signed-token');
 
+      const includedEmployee = {
+        id: 'employee-1',
+        full_name: 'Staff One',
+        user_id: 'user-1',
+        phone: '08123456789',
+        address: 'Jl. Test 123',
+        photo_url: null,
+        join_date: '2026-01-01',
+        job_title: 'Staff',
+      };
+
       jest.spyOn(User, 'unscoped').mockReturnValue({
-        findOne: jest.fn().mockResolvedValue({
+        findOne: jest.fn().mockResolvedValue(makeMockUser({
           id: 'user-1',
           email: 'staff@example.com',
           password_hash: '$2b$10$IfFQaAy6W6KbIOcvFKYh4u.fkxXd21qrLsYxWblA3UXYFTw7/uWPq',
           role: 'staff',
           is_active: true,
-        }),
-        update: jest.fn().mockResolvedValue([1]),
-      } as any);
-
-      jest.spyOn(Employee, 'findOne').mockResolvedValue({
-        toJSON: () => ({
-          id: 'employee-1',
-          full_name: 'Staff One',
-        }),
+          employee: includedEmployee,
+        })),
       } as any);
 
       const result = await AuthService.login({
@@ -48,10 +76,7 @@ describe('AuthService', () => {
           email: 'staff@example.com',
           role: 'staff',
         },
-        employee: {
-          id: 'employee-1',
-          full_name: 'Staff One',
-        },
+        employee: includedEmployee,
       });
 
       expect(passwordUtils.comparePassword).toHaveBeenCalled();
@@ -75,13 +100,14 @@ describe('AuthService', () => {
       jest.spyOn(passwordUtils, 'comparePassword').mockResolvedValue(false);
 
       jest.spyOn(User, 'unscoped').mockReturnValue({
-        findOne: jest.fn().mockResolvedValue({
+        findOne: jest.fn().mockResolvedValue(makeMockUser({
           id: 'user-1',
           email: 'staff@example.com',
           password_hash: '$2b$10$IfFQaAy6W6KbIOcvFKYh4u.fkxXd21qrLsYxWblA3UXYFTw7/uWPq',
           role: 'staff',
           is_active: true,
-        }),
+          employee: null,
+        })),
       } as any);
 
       await expect(
@@ -242,21 +268,25 @@ describe('AuthService', () => {
 
   describe('getMe', () => {
     it('returns user and employee data for valid user', async () => {
+      const includedEmployee = {
+        id: 'employee-1',
+        full_name: 'Staff One',
+        user_id: 'user-1',
+        phone: '08123456789',
+        address: 'Jl. Test 123',
+        photo_url: null,
+        join_date: '2026-01-01',
+        job_title: 'Staff',
+      };
+
       jest.spyOn(User, 'unscoped').mockReturnValue({
-        findByPk: jest.fn().mockResolvedValue({
+        findByPk: jest.fn().mockResolvedValue(makeMockUser({
           id: 'user-1',
           email: 'staff@example.com',
           role: 'staff',
           is_active: true,
-        }),
-      } as any);
-
-      jest.spyOn(Employee, 'findOne').mockResolvedValue({
-        toJSON: () => ({
-          id: 'employee-1',
-          full_name: 'Staff One',
-          department_id: 'dept-1',
-        }),
+          employee: includedEmployee,
+        })),
       } as any);
 
       const result = await AuthService.getMe('user-1');
@@ -267,11 +297,7 @@ describe('AuthService', () => {
           email: 'staff@example.com',
           role: 'staff',
         },
-        employee: {
-          id: 'employee-1',
-          full_name: 'Staff One',
-          department_id: 'dept-1',
-        },
+        employee: includedEmployee,
       });
     });
 
@@ -285,12 +311,13 @@ describe('AuthService', () => {
 
     it('throws error when user is inactive', async () => {
       jest.spyOn(User, 'unscoped').mockReturnValue({
-        findByPk: jest.fn().mockResolvedValue({
+        findByPk: jest.fn().mockResolvedValue(makeMockUser({
           id: 'user-1',
           email: 'staff@example.com',
           role: 'staff',
           is_active: false,
-        }),
+          employee: null,
+        })),
       } as any);
 
       await expect(AuthService.getMe('user-1')).rejects.toThrow('Akun Anda telah dinonaktifkan');
@@ -298,15 +325,14 @@ describe('AuthService', () => {
 
     it('returns user data without employee if employee not found', async () => {
       jest.spyOn(User, 'unscoped').mockReturnValue({
-        findByPk: jest.fn().mockResolvedValue({
+        findByPk: jest.fn().mockResolvedValue(makeMockUser({
           id: 'user-1',
           email: 'staff@example.com',
           role: 'staff',
           is_active: true,
-        }),
+          employee: null,
+        })),
       } as any);
-
-      jest.spyOn(Employee, 'findOne').mockResolvedValue(null);
 
       const result = await AuthService.getMe('user-1');
 

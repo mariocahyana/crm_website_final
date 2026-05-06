@@ -20,6 +20,8 @@ interface SessionUser {
     phone: string;
     address: string;
     photo_url: string | null;
+    join_date?: string;
+    job_title?: string;
     department_id?: string | null;
   } | null;
 }
