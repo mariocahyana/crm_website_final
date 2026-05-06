@@ -61,7 +61,7 @@ class PayrollService {
     });
   }
 
-  static async createPeriod(input: { month: number; year: number; actorId: string }) {
+  static async createPeriod(input: { month: number; year: number; actorId: string; }) {
     const month = Number(input.month);
     const year = Number(input.year);
 
