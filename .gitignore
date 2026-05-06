@@ -29,3 +29,4 @@ Thumbs.db
 package.json
 config.cjs
 database.ts
+.env.mar

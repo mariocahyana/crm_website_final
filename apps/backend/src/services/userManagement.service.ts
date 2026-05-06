@@ -95,6 +95,69 @@ class UserManagementService {
     };
   }
 
+  static async getUserTree() {
+    const users = await User.findAll({
+      where: { is_active: true },
+      include: [
+        {
+          model: Employee,
+          as: 'employee',
+          required: false,
+        },
+      ],
+    });
+
+    const mapped = users.map((u: any) => {
+      const user = u.toJSON();
+      return {
+        id: user.id,
+        email: user.email,
+        role: user.role as 'admin' | 'staff' | 'manager',
+        employee: user.employee
+          ? {
+              id: user.employee.id,
+              employee_number: user.employee.employee_number,
+              full_name: user.employee.full_name,
+              job_title: user.employee.job_title as string | null,
+              department_id: user.employee.department_id as string | null,
+              manager_id: user.employee.manager_id as string | null,
+              photo_url: user.employee.photo_url as string | null,
+            }
+          : null,
+      };
+    });
+
+    // Build tree: admins at top, managers with their staff
+    const adminNodes = mapped.filter((u) => u.role === 'admin');
+    const managerNodes = mapped.filter((u) => u.role === 'manager');
+    const staffNodes = mapped.filter((u) => u.role === 'staff');
+
+    // Map employee.id -> user for manager lookup
+    const employeeIdToUser: Record<string, typeof mapped[0]> = {};
+    for (const u of mapped) {
+      if (u.employee) {
+        employeeIdToUser[u.employee.id] = u;
+      }
+    }
+
+    const managersWithStaff = managerNodes.map((manager) => ({
+      ...manager,
+      subordinates: staffNodes.filter(
+        (s) => s.employee?.manager_id === manager.employee?.id
+      ),
+    }));
+
+    const unassignedStaff = staffNodes.filter(
+      (s) => !s.employee?.manager_id
+    );
+
+    return {
+      admins: adminNodes,
+      managers: managersWithStaff,
+      unassigned_staff: unassignedStaff,
+    };
+  }
+
   static async listUsers() {
     const users = await User.findAll({
       order: [['created_at', 'DESC']],
