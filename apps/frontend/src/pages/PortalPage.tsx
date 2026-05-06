@@ -10,6 +10,8 @@ import { payrollApi, type PayrollPeriod, type PayrollPayslip, type PayrollPaysli
 import { reimbursementsApi, type ReimbursementRequest } from '../services/reimbursements';
 import { usersApi, type ManagedUser, type UserManagementOptions } from '../services/users';
 import { UserTreePage } from './Portal/UserTree';
+import { ChangePasswordPage } from './Portal/ChangePassword';
+import { ResetApprovalPage } from './Portal/ResetApproval';
 
 interface SessionUser {
   user: {
@@ -35,7 +37,7 @@ interface PortalPageProps {
   onEmployeeUpdate: (employee: SessionUser['employee']) => void;
 }
 
-type PortalMenu = 'overview' | 'profile' | 'leave' | 'reimburse' | 'users' | 'user-tree' | 'attendance-qr' | 'attendance-history' | 'attendance-scan' | 'payroll' | 'my-payroll';
+type PortalMenu = 'overview' | 'profile' | 'leave' | 'reimburse' | 'users' | 'user-tree' | 'attendance-qr' | 'attendance-history' | 'attendance-scan' | 'payroll' | 'my-payroll' | 'change-password' | 'reset-approval';
 
 interface AttendanceQrView extends AdminAttendanceQrCode {
   qrDataUrl: string;
@@ -82,6 +84,7 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
       : 'Staff';
   const canManageUsers = currentUser.user.role === 'admin';
   const canViewTree = currentUser.user.role === 'admin' || currentUser.user.role === 'manager';
+  const canManageResetApproval = currentUser.user.role === 'admin';
   const canManageAttendanceQr = currentUser.user.role === 'admin';
   const canScanAttendance = currentUser.user.role === 'staff' || currentUser.user.role === 'manager';
   const canManagePayroll = currentUser.user.role === 'admin';
@@ -498,6 +501,10 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
 
     if (canManageUsers) menus.push({ id: 'users', label: 'User Management' });
     if (canViewTree) menus.push({ id: 'user-tree', label: 'User Tree' });
+    if (canManageResetApproval) menus.push({ id: 'reset-approval', label: 'Reset Approval' });
+    if (currentUser.user.role !== 'admin') {
+      menus.push({ id: 'change-password', label: 'Ubah Password' });
+    }
     if (canManagePayroll) menus.push({ id: 'payroll', label: 'Payroll' });
     if (canViewMyPayroll) menus.push({ id: 'my-payroll', label: 'Payslip Saya' });
     if (canManageAttendanceQr) menus.push({ id: 'attendance-qr', label: 'Attendance QR' });
@@ -505,7 +512,7 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
     if (canScanAttendance) menus.push({ id: 'attendance-scan', label: 'Scan QR' });
 
     return menus;
-  }, [canManageUsers, canViewTree, canManagePayroll, canViewMyPayroll, canManageAttendanceQr, canScanAttendance]);
+  }, [canManageUsers, canViewTree, canManageResetApproval, canManagePayroll, canViewMyPayroll, canManageAttendanceQr, canScanAttendance, currentUser.user.role]);
 
   const calendarDays = useMemo(() => {
     const year = calendarMonth.getFullYear();
@@ -2734,6 +2741,14 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
 
       {activeMenu === 'user-tree' && canViewTree && (
         <UserTreePage token={token} currentUserRole={currentUser.user.role} />
+      )}
+
+      {activeMenu === 'reset-approval' && canManageResetApproval && (
+        <ResetApprovalPage token={token} />
+      )}
+
+      {activeMenu === 'change-password' && (
+        <ChangePasswordPage token={token} currentUserRole={currentUser.user.role} />
       )}
 
       {activeMenu === 'users' && canManageUsers && (

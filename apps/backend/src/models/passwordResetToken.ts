@@ -11,6 +11,14 @@ export default function PasswordResetTokenModel(sequelize: any) {
     isValid(): boolean {
       return !this.getDataValue('used_at') && !this.isExpired();
     }
+
+    isApproved(): boolean {
+      return !!this.getDataValue('approved_at');
+    }
+
+    isReadyToUse(): boolean {
+      return this.isValid() && this.isApproved();
+    }
   }
 
   PasswordResetToken.init({
@@ -28,12 +36,24 @@ export default function PasswordResetTokenModel(sequelize: any) {
       allowNull: false,
       unique: true,
     },
+    token_value: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+    },
     expires_at: {
       type: DataTypes.DATE,
       allowNull: false,
     },
     used_at: {
       type: DataTypes.DATE,
+      allowNull: true,
+    },
+    approved_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
+    approved_by: {
+      type: DataTypes.UUID,
       allowNull: true,
     },
   }, {

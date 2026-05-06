@@ -52,6 +52,23 @@ interface ResetPasswordResponse {
   };
 }
 
+export interface PendingResetRequest {
+  id: string;
+  created_at: string;
+  expires_at: string;
+  token_value?: string | null;
+  user: {
+    id: string;
+    email: string;
+    role: string;
+    employee: {
+      full_name: string;
+      employee_number: string;
+      job_title: string | null;
+    } | null;
+  };
+}
+
 export const auth = {
   async login(email: string, password: string): Promise<LoginResponse> {
     const res = await fetch(`${API_BASE_URL}/auth/login`, {
@@ -105,6 +122,53 @@ export const auth = {
     }
 
     return res.json();
+  },
+
+
+  async getPendingResets(token: string): Promise<PendingResetRequest[]> {
+    const res = await fetch(`${API_BASE_URL}/auth/reset-requests`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.message || 'Gagal mengambil daftar request');
+    }
+    const payload = await res.json();
+    return payload.data;
+  },
+
+  async approveReset(token: string, resetId: string): Promise<void> {
+    const res = await fetch(`${API_BASE_URL}/auth/reset-requests/${resetId}/approve`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.message || 'Gagal approve request');
+    }
+  },
+
+  async rejectReset(token: string, resetId: string): Promise<void> {
+    const res = await fetch(`${API_BASE_URL}/auth/reset-requests/${resetId}/reject`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.message || 'Gagal reject request');
+    }
+  },
+
+  async changePassword(token: string, currentPassword: string, newPassword: string): Promise<void> {
+    const res = await fetch(`${API_BASE_URL}/auth/change-password`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ currentPassword, newPassword }),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.message || 'Gagal mengubah password');
+    }
   },
 
   getToken() {

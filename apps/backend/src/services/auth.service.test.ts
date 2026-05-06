@@ -159,8 +159,14 @@ describe('AuthService', () => {
       jest.spyOn(User, 'findOne').mockResolvedValue({
         id: 'user-1',
         email: 'staff@example.com',
-        getDataValue: (key: string) => (key === 'id' ? 'user-1' : undefined),
+        role: 'staff',
+        getDataValue: (key: string) => {
+          if (key === 'id') return 'user-1';
+          if (key === 'role') return 'staff';
+          return undefined;
+        },
       } as any);
+      jest.spyOn(PasswordResetToken, 'findOne').mockResolvedValue(null as any);
       jest.spyOn(PasswordResetToken, 'create').mockResolvedValue({
         id: 'token-1',
       } as any);
@@ -171,6 +177,43 @@ describe('AuthService', () => {
       expect(PasswordResetToken.create).toHaveBeenCalled();
       expect(result).toBeTruthy();
       expect(typeof result).toBe('string');
+    });
+
+    it('throws error when request is already pending', async () => {
+      jest.spyOn(User, 'findOne').mockResolvedValue({
+        id: 'user-1',
+        email: 'staff@example.com',
+        role: 'staff',
+        getDataValue: (key: string) => {
+          if (key === 'id') return 'user-1';
+          if (key === 'role') return 'staff';
+          return undefined;
+        },
+      } as any);
+      jest.spyOn(PasswordResetToken, 'findOne').mockResolvedValue({
+        id: 'token-1',
+      } as any);
+
+      await expect(
+        AuthService.generatePasswordReset('staff@example.com'),
+      ).rejects.toThrow('Reset password masih pending, tidak bisa request lagi');
+    });
+
+    it('throws error when admin requests password reset', async () => {
+      jest.spyOn(User, 'findOne').mockResolvedValue({
+        id: 'admin-1',
+        email: 'admin@example.com',
+        role: 'admin',
+        getDataValue: (key: string) => {
+          if (key === 'id') return 'admin-1';
+          if (key === 'role') return 'admin';
+          return undefined;
+        },
+      } as any);
+
+      await expect(
+        AuthService.generatePasswordReset('admin@example.com'),
+      ).rejects.toThrow('Admin tidak dapat melakukan reset password');
     });
 
     it('throws error when user not found', async () => {
@@ -187,6 +230,7 @@ describe('AuthService', () => {
       const mockToken = {
         getDataValue: (key: string) => (key === 'user_id' ? 'user-1' : undefined),
         isValid: jest.fn().mockReturnValue(true),
+        isApproved: jest.fn().mockReturnValue(true),
         update: jest.fn().mockResolvedValue({}),
       };
 
@@ -203,6 +247,37 @@ describe('AuthService', () => {
       expect(mockUser.update).toHaveBeenCalledWith({ password_hash: 'new-hashed-password' });
       expect(mockToken.update).toHaveBeenCalledWith({ used_at: expect.any(Date) });
       expect(result).toBe(true);
+    });
+
+    it('throws error when token has not been approved by admin', async () => {
+      const mockToken = {
+        getDataValue: (key: string) => (key === 'user_id' ? 'user-1' : undefined),
+        isValid: jest.fn().mockReturnValue(true),
+        isApproved: jest.fn().mockReturnValue(false),
+      };
+
+      jest.spyOn(PasswordResetToken, 'findOne').mockResolvedValue(mockToken as any);
+
+      await expect(
+        AuthService.resetPassword('token-value', 'newpassword123'),
+      ).rejects.toThrow('Token belum disetujui admin');
+    });
+
+    it('throws error when admin tries to reset password', async () => {
+      const mockToken = {
+        getDataValue: (key: string) => (key === 'user_id' ? 'admin-1' : undefined),
+        isValid: jest.fn().mockReturnValue(true),
+        isApproved: jest.fn().mockReturnValue(true),
+      };
+
+      jest.spyOn(PasswordResetToken, 'findOne').mockResolvedValue(mockToken as any);
+      jest.spyOn(User, 'findByPk').mockResolvedValue({
+        getDataValue: (key: string) => (key === 'role' ? 'admin' : undefined),
+      } as any);
+
+      await expect(
+        AuthService.resetPassword('token-value', 'newpassword123'),
+      ).rejects.toThrow('Admin tidak dapat melakukan reset password');
     });
 
     it('throws error when token not found', async () => {
@@ -229,6 +304,7 @@ describe('AuthService', () => {
       const mockToken = {
         getDataValue: (key: string) => (key === 'user_id' ? 'user-1' : undefined),
         isValid: jest.fn().mockReturnValue(true),
+        isApproved: jest.fn().mockReturnValue(true),
       };
 
       jest.spyOn(PasswordResetToken, 'findOne').mockResolvedValue(mockToken as any);
@@ -248,6 +324,13 @@ describe('AuthService', () => {
           email: 'staff@example.com',
           role: 'staff',
           is_active: true,
+          getDataValue: (key: string) => {
+            if (key === 'id') return 'user-1';
+            if (key === 'email') return 'staff@example.com';
+            if (key === 'role') return 'staff';
+            if (key === 'is_active') return true;
+            return undefined;
+          },
         }),
       } as any);
 
@@ -290,6 +373,13 @@ describe('AuthService', () => {
           email: 'staff@example.com',
           role: 'staff',
           is_active: false,
+          getDataValue: (key: string) => {
+            if (key === 'id') return 'user-1';
+            if (key === 'email') return 'staff@example.com';
+            if (key === 'role') return 'staff';
+            if (key === 'is_active') return false;
+            return undefined;
+          },
         }),
       } as any);
 
@@ -303,6 +393,13 @@ describe('AuthService', () => {
           email: 'staff@example.com',
           role: 'staff',
           is_active: true,
+          getDataValue: (key: string) => {
+            if (key === 'id') return 'user-1';
+            if (key === 'email') return 'staff@example.com';
+            if (key === 'role') return 'staff';
+            if (key === 'is_active') return true;
+            return undefined;
+          },
         }),
       } as any);
 
@@ -318,6 +415,23 @@ describe('AuthService', () => {
         },
         employee: null,
       });
+    });
+  });
+
+  describe('changePassword', () => {
+    it('throws error when admin tries to change password', async () => {
+      jest.spyOn(User, 'unscoped').mockReturnValue({
+        findByPk: jest.fn().mockResolvedValue({
+          id: 'admin-1',
+          password_hash: '$2b$10$IfFQaAy6W6KbIOcvFKYh4u.fkxXd21qrLsYxWblA3UXYFTw7/uWPq',
+          role: 'admin',
+          is_active: true,
+        }),
+      } as any);
+
+      await expect(
+        AuthService.changePassword('admin-1', 'oldpass', 'newpass123'),
+      ).rejects.toThrow('Admin tidak dapat mengubah password');
     });
   });
 });

@@ -1,4 +1,4 @@
-export type PortalMenu = 'overview' | 'profile' | 'leave' | 'reimburse' | 'users' | 'attendance-qr' | 'attendance-history' | 'attendance-scan' | 'payroll' | 'my-payroll';
+export type PortalMenu = 'overview' | 'profile' | 'leave' | 'reimburse' | 'users' | 'user-tree' | 'change-password' | 'reset-approval' | 'attendance-qr' | 'attendance-history' | 'attendance-scan' | 'payroll' | 'my-payroll';
 
 interface PortalNavProps {
   activeMenu: PortalMenu;
