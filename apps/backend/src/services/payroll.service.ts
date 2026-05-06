@@ -272,22 +272,7 @@ class PayrollService {
       order: [['created_at', 'ASC']],
     });
 
-    // For draft periods, add calculated auto items to each payslip
-    const result = payslips.map((ps: any) => {
-      const plain = ps.toJSON();
-      return plain;
-    });
-
-    if (period.getDataValue('status') === 'draft') {
-      const { start, end } = monthRange(period.getDataValue('year'), period.getDataValue('month'));
-      const workingDays = Math.max(1, countWorkingDays(start, end));
-
-      for (const plain of result) {
-        const calculatedAutoItems = await this.calculateAutoItems(plain.employee_id, start, end, workingDays);
-        if (!plain.items) plain.items = [];
-        plain.items = [...(plain.items || []), ...calculatedAutoItems];
-      }
-    }
+    const result = await this.buildPayslipSnapshots(payslips as any[], period);
 
     return { period: period.toJSON(), payslips: result };
   }
@@ -303,32 +288,20 @@ class PayrollService {
 
     if (!payslip) throw new NotFoundError('Payslip tidak ditemukan');
 
-    const plain = payslip.toJSON() as any;
-    let items = plain.items || [];
-
-    // For draft periods, add calculated auto items
-    if (plain.period && plain.period.status === 'draft') {
-      const period = plain.period;
-      const { start, end } = monthRange(period.year, period.month);
-      const workingDays = Math.max(1, countWorkingDays(start, end));
-      const calculatedAutoItems = await this.calculateAutoItems(plain.employee_id, start, end, workingDays);
-      items = items.concat(calculatedAutoItems);
-    }
-
-    const totals = summarizePayrollItems(items);
+    const [snapshot] = await this.buildPayslipSnapshots([payslip as any], payslip.getDataValue('period'));
 
     return {
-      payslip: plain,
+      payslip: snapshot,
       totals: {
-        base_salary: Number(plain.base_salary || 0),
-        total_incentive: Number(plain.total_incentive || 0),
-        total_bonus: Number(plain.total_bonus || 0),
-        total_reimburse: Number(plain.total_reimburse || 0),
-        total_penalty: Number(plain.total_penalty || 0),
-        net_salary: Number(plain.net_salary || 0),
+        base_salary: Number(snapshot.base_salary || 0),
+        total_incentive: Number(snapshot.total_incentive || 0),
+        total_bonus: Number(snapshot.total_bonus || 0),
+        total_reimburse: Number(snapshot.total_reimburse || 0),
+        total_penalty: Number(snapshot.total_penalty || 0),
+        net_salary: Number(snapshot.net_salary || 0),
       },
-      breakdown: totals,
-      items,
+      breakdown: summarizePayrollItems(snapshot.items || []),
+      items: snapshot.items || [],
     };
   }
 
@@ -344,9 +317,11 @@ class PayrollService {
       order: [['created_at', 'DESC']],
     });
 
+    const result = await this.buildPayslipSnapshots(payslips as any[], null);
+
     return {
       employee_id: resolvedEmployee,
-      payslips,
+      payslips: result,
     };
   }
 
@@ -367,22 +342,20 @@ class PayrollService {
 
     if (!payslip) throw new NotFoundError('Payslip tidak ditemukan');
 
-    const plain = payslip.toJSON() as any;
-    const items = plain.items || [];
-    const totals = summarizePayrollItems(items);
+    const [snapshot] = await this.buildPayslipSnapshots([payslip as any], payslip.getDataValue('period'));
 
     return {
-      payslip: plain,
+      payslip: snapshot,
       totals: {
-        base_salary: Number(plain.base_salary || 0),
-        total_incentive: Number(plain.total_incentive || 0),
-        total_bonus: Number(plain.total_bonus || 0),
-        total_reimburse: Number(plain.total_reimburse || 0),
-        total_penalty: Number(plain.total_penalty || 0),
-        net_salary: Number(plain.net_salary || 0),
+        base_salary: Number(snapshot.base_salary || 0),
+        total_incentive: Number(snapshot.total_incentive || 0),
+        total_bonus: Number(snapshot.total_bonus || 0),
+        total_reimburse: Number(snapshot.total_reimburse || 0),
+        total_penalty: Number(snapshot.total_penalty || 0),
+        net_salary: Number(snapshot.net_salary || 0),
       },
-      breakdown: totals,
-      items,
+      breakdown: summarizePayrollItems(snapshot.items || []),
+      items: snapshot.items || [],
     };
   }
 
@@ -668,7 +641,13 @@ class PayrollService {
         for (const calcItem of calculatedItems) {
           // Check if similar item already exists
           const existing = await PayrollItem.findOne({
-            where: { payslip_id: psId, source: calcItem.source, type: calcItem.type },
+            where: {
+              payslip_id: psId,
+              source: calcItem.source,
+              type: calcItem.type,
+              ref_id: calcItem.ref_id || null,
+              ref_type: calcItem.ref_type || null,
+            },
             transaction: t,
           });
           if (!existing && calcItem.amount > 0) {
@@ -828,6 +807,76 @@ class PayrollService {
     }
 
     return items;
+  }
+
+  private static async buildPayslipSnapshots(payslips: any[], period: any | null) {
+    const isDraft = Boolean(period && period.getDataValue && period.getDataValue('status') === 'draft')
+      || Boolean(period && period.status === 'draft');
+
+    const periodYear = period?.getDataValue ? period.getDataValue('year') : period?.year;
+    const periodMonth = period?.getDataValue ? period.getDataValue('month') : period?.month;
+
+    let start: Date | null = null;
+    let end: Date | null = null;
+    let workingDays = 0;
+    if (isDraft && periodYear && periodMonth) {
+      const range = monthRange(Number(periodYear), Number(periodMonth));
+      start = range.start;
+      end = range.end;
+      workingDays = Math.max(1, countWorkingDays(start, end));
+    }
+
+    const snapshots: any[] = [];
+    for (const payslip of payslips as any[]) {
+      const plain = payslip.toJSON ? payslip.toJSON() : payslip;
+      const storedItems = Array.isArray(plain.items) ? plain.items : [];
+      let items = storedItems.slice();
+
+      if (isDraft && start && end) {
+        const calculatedAutoItems = await this.calculateAutoItems(plain.employee_id, start, end, workingDays);
+        const existingKeys = new Set(items.map((item: any) => this.payrollItemKey(item)));
+        for (const calcItem of calculatedAutoItems) {
+          const key = this.payrollItemKey(calcItem);
+          if (!existingKeys.has(key)) {
+            items.push(calcItem);
+            existingKeys.add(key);
+          }
+        }
+      }
+
+      const summary = summarizePayrollItems(items);
+      const baseSalary = Number(plain.base_salary || 0);
+      const totalIncentive = summary.totalIncentive;
+      const totalBonus = summary.totalBonus;
+      const totalReimburse = summary.totalReimburse;
+      const totalPenalty = summary.totalPenalty;
+      const netSalary = baseSalary + totalIncentive + totalBonus + totalReimburse - totalPenalty;
+
+      snapshots.push({
+        ...plain,
+        items,
+        total_incentive: totalIncentive,
+        total_bonus: totalBonus,
+        total_reimburse: totalReimburse,
+        total_penalty: totalPenalty,
+        net_salary: netSalary,
+      });
+    }
+
+    return snapshots;
+  }
+
+  private static payrollItemKey(item: any) {
+    const source = item?.source || '';
+    const type = item?.type || '';
+    const refType = item?.ref_type || '';
+    const refId = item?.ref_id || '';
+
+    if (refType || refId) {
+      return `${source}:${type}:${refType}:${refId}`;
+    }
+
+    return `${source}:${type}:${Number(item?.amount || 0)}:${item?.description || ''}`;
   }
 }
 

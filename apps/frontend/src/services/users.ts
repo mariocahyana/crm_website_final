@@ -30,6 +30,7 @@ export interface UserManagementOptions {
     id: string;
     full_name: string;
     employee_number: string;
+    department_id: string | null;
   }>;
 }
 

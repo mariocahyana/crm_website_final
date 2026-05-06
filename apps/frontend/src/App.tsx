@@ -5,7 +5,7 @@ import { ProtectedRoute } from './components/ProtectedRoute';
 import { LoginPage } from './pages/LoginPage';
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
 import { ResetPasswordPage } from './pages/ResetPasswordPage';
-import { PortalPage } from './pages/PortalPage';
+import { PortalPagesContainer } from './components/Portal';
 import './styles/global.css';
 
 interface SessionUser {
@@ -112,8 +112,9 @@ function App() {
           path="/admin"
           element={
             <ProtectedRoute currentUser={currentUser} allowedRoles={['admin', 'manager']}>
-              <PortalPage
+              <PortalPagesContainer
                 currentUser={currentUser!}
+                token={auth.getToken()}
                 onLogout={handleLogout}
                 onEmployeeUpdate={handleEmployeeUpdate}
               />
@@ -124,8 +125,9 @@ function App() {
           path="/staff"
           element={
             <ProtectedRoute currentUser={currentUser} allowedRoles={['staff']}>
-              <PortalPage
+              <PortalPagesContainer
                 currentUser={currentUser!}
+                token={auth.getToken()}
                 onLogout={handleLogout}
                 onEmployeeUpdate={handleEmployeeUpdate}
               />

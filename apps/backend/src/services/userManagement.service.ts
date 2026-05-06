@@ -39,6 +39,7 @@ interface UserManagementOptions {
     id: string;
     full_name: string;
     employee_number: string;
+    department_id: string | null;
   }>;
 }
 
@@ -74,8 +75,17 @@ class UserManagementService {
         attributes: ['id', 'name'],
       }),
       Employee.findAll({
+        include: [
+          {
+            model: User,
+            as: 'user',
+            attributes: ['role'],
+            where: { role: 'manager' },
+            required: true,
+          },
+        ],
         order: [['full_name', 'ASC']],
-        attributes: ['id', 'full_name', 'employee_number'],
+        attributes: ['id', 'full_name', 'employee_number', 'department_id'],
       }),
     ]);
 
@@ -157,9 +167,21 @@ class UserManagementService {
     }
 
     if (input.manager_id) {
-      const manager = await Employee.findByPk(input.manager_id);
+      const manager = await Employee.findByPk(input.manager_id, {
+        include: [
+          {
+            model: User,
+            as: 'user',
+            attributes: ['role'],
+          },
+        ],
+      });
       if (!manager) {
         throw new ValidationError('Manager tidak ditemukan');
+      }
+      const managerUser = manager.get('user') as any;
+      if (!managerUser || managerUser.role !== 'manager') {
+        throw new ValidationError('Manager yang dipilih harus memiliki role manager');
       }
     }
 
@@ -245,9 +267,21 @@ class UserManagementService {
       if (input.manager_id === targetEmployee.getDataValue('id')) {
         throw new ValidationError('Manager tidak boleh diri sendiri');
       }
-      const manager = await Employee.findByPk(input.manager_id);
+      const manager = await Employee.findByPk(input.manager_id, {
+        include: [
+          {
+            model: User,
+            as: 'user',
+            attributes: ['role'],
+          },
+        ],
+      });
       if (!manager) {
         throw new ValidationError('Manager tidak ditemukan');
+      }
+      const managerUser = manager.get('user') as any;
+      if (!managerUser || managerUser.role !== 'manager') {
+        throw new ValidationError('Manager yang dipilih harus memiliki role manager');
       }
     }
 
