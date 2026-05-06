@@ -20,6 +20,7 @@ interface SessionUser {
     phone: string;
     address: string;
     photo_url: string | null;
+    department_id?: string | null;
   } | null;
 }
 

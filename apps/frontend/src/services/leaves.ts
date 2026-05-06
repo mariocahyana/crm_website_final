@@ -28,6 +28,9 @@ export interface LeaveRequest {
     department_id: string | null;
     manager_id: string | null;
     job_title: string | null;
+    user?: {
+      role: 'admin' | 'staff' | 'manager';
+    } | null;
   };
   approver?: {
     id: string;

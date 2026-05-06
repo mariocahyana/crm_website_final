@@ -1,5 +1,5 @@
 import { Op } from 'sequelize';
-import { LeaveType, LeaveRequest, Employee, ActivityLog } from '../models/index';
+import { LeaveType, LeaveRequest, Employee, User, ActivityLog } from '../models/index';
 import notifications from './notifications.service';
 import { ForbiddenError, NotFoundError, ValidationError } from '../utils/errors';
 
@@ -59,6 +59,14 @@ function includeRequestRelations() {
       model: Employee,
       as: 'employee',
       attributes: ['id', 'employee_number', 'full_name', 'department_id', 'manager_id', 'job_title'],
+      include: [
+        {
+          model: User,
+          as: 'user',
+          attributes: ['role'],
+          required: false,
+        },
+      ],
     },
     {
       model: Employee,
@@ -203,14 +211,18 @@ class LeaveService {
     }
 
     const employee = request.get('employee') as any;
+    const requesterRole = employee?.user?.role as UserRole | undefined;
     const approver = await Employee.findByPk(auth.employeeId, {
       attributes: ['id', 'department_id'],
       raw: true,
     }) as { id: string; department_id: string | null } | null;
 
     const isAdmin = auth.role === 'admin';
-    const isDirectManager = auth.role === 'manager' && employee?.manager_id === auth.employeeId;
+    const isStaffRequest = requesterRole === 'staff';
+    const isManagerRequest = requesterRole === 'manager';
+    const isDirectManager = auth.role === 'manager' && isStaffRequest && employee?.manager_id === auth.employeeId;
     const isSameDepartmentManager = auth.role === 'manager'
+      && isStaffRequest
       && !!approver?.department_id
       && approver.department_id === employee?.department_id;
 
@@ -218,7 +230,11 @@ class LeaveService {
       throw new ForbiddenError('Admin tidak dapat memproses request cuti miliknya sendiri');
     }
 
-    if (!isAdmin && !isDirectManager && !isSameDepartmentManager) {
+    if (isManagerRequest && !isAdmin) {
+      throw new ForbiddenError('Request cuti manager hanya bisa diproses oleh admin');
+    }
+
+    if (isStaffRequest && !isAdmin && !isDirectManager && !isSameDepartmentManager) {
       throw new ForbiddenError('Tidak punya akses untuk memproses request ini');
     }
 

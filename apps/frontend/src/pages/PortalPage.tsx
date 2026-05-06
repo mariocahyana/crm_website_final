@@ -22,6 +22,7 @@ interface SessionUser {
     phone: string;
     address: string;
     photo_url: string | null;
+    department_id?: string | null;
     join_date?: string;
     job_title?: string;
   } | null;
@@ -83,6 +84,7 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
   const canScanAttendance = currentUser.user.role === 'staff' || currentUser.user.role === 'manager';
   const canManagePayroll = currentUser.user.role === 'admin';
   const canViewMyPayroll = Boolean(currentUser.employee);
+  const canCreateReimbursement = currentUser.user.role !== 'admin';
   const employeeName = currentUser.employee?.full_name || 'User';
   
   const [users, setUsers] = useState<ManagedUser[]>([]);
@@ -550,6 +552,35 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
       .filter((request) => request.status === 'approved')
       .reduce((sum, request) => sum + Number(request.amount || 0), 0),
   }), [reimbursementRequests]);
+
+  const canDecideLeaveRequest = (request: LeaveRequest) => {
+    if (request.status !== 'pending') {
+      return false;
+    }
+
+    if (request.employee_id === currentUser.employee?.id) {
+      return false;
+    }
+
+    if (currentUser.user.role === 'admin') {
+      return true;
+    }
+
+    if (currentUser.user.role !== 'manager') {
+      return false;
+    }
+
+    if (request.employee?.user?.role !== 'staff') {
+      return false;
+    }
+
+    const currentDepartmentId = currentUser.employee?.department_id || null;
+    if (!currentDepartmentId) {
+      return request.employee?.manager_id === currentUser.employee?.id;
+    }
+
+    return request.employee?.department_id === currentDepartmentId;
+  };
 
   const profileIsDirty = useMemo(() => {
     if (!currentUser.employee) return false;
@@ -1650,7 +1681,7 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
 
                 {photoPreviewUrl && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    <div style={{ fontSize: 12, fontWeight: 500, color: '#666' }}>Preview Foto Baru</div>
+                    <div style={{ fontSize: 12, fontWeight: 500, color: '#666' ,transform: 'translateY(-23px)'}}>Preview Foto Baru</div>
                     <div>
                       <img
                         src={photoPreviewUrl}
@@ -1661,11 +1692,16 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
                           borderRadius: 8,
                           objectFit: 'cover',
                           border: '2px solid #4CAF50',
+                          //naikin foto agak ke atass
+                          transform: 'translateY(-23px)',
                         }}
                       />
                       <button
                         type="button"
                         className="secondary-btn"
+                       
+                        //button color red
+                        
                         onClick={() => {
                           try { if (photoPreviewUrl) URL.revokeObjectURL(photoPreviewUrl); } catch {}
                           setPhotoPreviewUrl(null);
@@ -1674,7 +1710,7 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
                             try { photoInputRef.current.value = ''; } catch {}
                           }
                         }}
-                        style={{ marginTop: 8, width: '100%' }}
+                        style={{ marginTop: 8, width: '100%'}}
                       >
                         Batal
                       </button>
@@ -1911,7 +1947,7 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
             leaveRequests.map((request) => {
               const isOwnRequest = request.employee_id === currentUser.employee?.id;
               const canCancel = isOwnRequest && request.status === 'pending';
-              const canDecide = canReviewLeaves && !isOwnRequest && request.status === 'pending';
+              const canDecide = canDecideLeaveRequest(request);
 
               return (
                 <div key={request.id} className="leave-item">
@@ -1954,7 +1990,7 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
       <section className="panel reimburse-panel">
         <h3>Reimburse Management</h3>
         <div className="section-head">
-          <p>{canReviewLeaves ? 'Review dan ajukan reimburse.' : 'Ajukan dan pantau reimburse Anda.'}</p>
+          <p>{currentUser.user.role === 'admin' ? 'Admin hanya dapat review reimburse.' : canReviewLeaves ? 'Review dan ajukan reimburse.' : 'Ajukan dan pantau reimburse Anda.'}</p>
           <div className="leave-summary">
             <span>Pending: {reimbursementSummary.pending}</span>
             <span>Approved: {reimbursementSummary.approved}</span>
@@ -1966,7 +2002,7 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
         {reimbursementError && <p className="inline-error" style={{ color: '#dc2626' }}>{reimbursementError}</p>}
         {reimbursementMessage && <p className="inline-success">{reimbursementMessage}</p>}
 
-        {currentUser.employee ? (
+        {canCreateReimbursement && currentUser.employee ? (
           <form className="reimburse-form crm-form" onSubmit={handleCreateReimbursement}>
             <div className="form-row-three">
               <div className="form-group">
@@ -2061,6 +2097,8 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
               </button>
             </div>
           </form>
+        ) : currentUser.user.role === 'admin' ? (
+          <p>Admin hanya dapat approve atau decline request reimburse.</p>
         ) : (
           <p>Data employee belum tersedia untuk mengajukan reimburse.</p>
         )}
@@ -2400,19 +2438,7 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
             <>
               <div className="payroll-preview-table">
                 <h4>Payslips</h4>
-                {payrollPayslips.length > 0 && (
-                  <div className="form-group" style={{ maxWidth: 320, marginBottom: 16 }}>
-                    <label>Pilih Detail Payslip</label>
-                    <select value={selectedPayrollPayslipId} onChange={(e) => setSelectedPayrollPayslipId(e.target.value)}>
-                      <option value="">Pilih payslip</option>
-                      {payrollPayslips.map((payslip) => (
-                        <option key={payslip.id} value={payslip.id}>
-                          {payslip.employee?.full_name || payslip.employee_id}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
+               
                 {payrollPayslips.length === 0 ? (
                   <p>Belum ada payslip di period ini.</p>
                 ) : (
@@ -2441,6 +2467,20 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
               {payrollPayslipDetail && !payrollDetailLoading && (
                 <div className="payroll-preview-table">
                   <h4>Detail Payslip</h4>
+                  {payrollPayslips.length > 0 && (
+                  <div className="form-group" style={{ maxWidth: 320, marginBottom: 16 }}>
+                    <label>Pilih Detail Payslip</label>
+                    <select value={selectedPayrollPayslipId} onChange={(e) => setSelectedPayrollPayslipId(e.target.value)}>
+                      <option value="">Pilih payslip</option>
+                      {payrollPayslips.map((payslip) => (
+                        <option key={payslip.id} value={payslip.id}>
+                          {payslip.employee?.full_name || payslip.employee_id}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                
                   <div className="payroll-grid">
                     <div className="user-item">
                       <div>
