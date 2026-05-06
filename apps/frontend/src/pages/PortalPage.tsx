@@ -9,6 +9,7 @@ import { profileApi } from '../services/profile';
 import { payrollApi, type PayrollPeriod, type PayrollPayslip, type PayrollPayslipDetailResponse } from '../services/payroll';
 import { reimbursementsApi, type ReimbursementRequest } from '../services/reimbursements';
 import { usersApi, type ManagedUser, type UserManagementOptions } from '../services/users';
+import { UserTreePage } from './Portal/UserTree';
 
 interface SessionUser {
   user: {
@@ -34,7 +35,7 @@ interface PortalPageProps {
   onEmployeeUpdate: (employee: SessionUser['employee']) => void;
 }
 
-type PortalMenu = 'overview' | 'profile' | 'leave' | 'reimburse' | 'users' | 'attendance-qr' | 'attendance-history' | 'attendance-scan' | 'payroll' | 'my-payroll';
+type PortalMenu = 'overview' | 'profile' | 'leave' | 'reimburse' | 'users' | 'user-tree' | 'attendance-qr' | 'attendance-history' | 'attendance-scan' | 'payroll' | 'my-payroll';
 
 interface AttendanceQrView extends AdminAttendanceQrCode {
   qrDataUrl: string;
@@ -80,6 +81,7 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
       ? 'Manager'
       : 'Staff';
   const canManageUsers = currentUser.user.role === 'admin';
+  const canViewTree = currentUser.user.role === 'admin' || currentUser.user.role === 'manager';
   const canManageAttendanceQr = currentUser.user.role === 'admin';
   const canScanAttendance = currentUser.user.role === 'staff' || currentUser.user.role === 'manager';
   const canManagePayroll = currentUser.user.role === 'admin';
@@ -507,6 +509,7 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
     ];
 
     if (canManageUsers) menus.push({ id: 'users', label: 'User Management' });
+    if (canViewTree) menus.push({ id: 'user-tree', label: 'User Tree' });
     if (canManagePayroll) menus.push({ id: 'payroll', label: 'Payroll' });
     if (canViewMyPayroll) menus.push({ id: 'my-payroll', label: 'Payslip Saya' });
     if (canManageAttendanceQr) menus.push({ id: 'attendance-qr', label: 'Attendance QR' });
@@ -514,7 +517,7 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
     if (canScanAttendance) menus.push({ id: 'attendance-scan', label: 'Scan QR' });
 
     return menus;
-  }, [canManageUsers, canManagePayroll, canViewMyPayroll, canManageAttendanceQr, canScanAttendance]);
+  }, [canManageUsers, canViewTree, canManagePayroll, canViewMyPayroll, canManageAttendanceQr, canScanAttendance]);
 
   const calendarDays = useMemo(() => {
     const year = calendarMonth.getFullYear();
@@ -2739,6 +2742,10 @@ export function PortalPage({ currentUser, onLogout, onEmployeeUpdate }: PortalPa
             </div>
           )}
         </section>
+      )}
+
+      {activeMenu === 'user-tree' && canViewTree && (
+        <UserTreePage token={token} currentUserRole={currentUser.user.role} />
       )}
 
       {activeMenu === 'users' && canManageUsers && (

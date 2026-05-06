@@ -9,7 +9,7 @@ on:
       - main
 
 jobs:
-  build:
+  backend-typecheck:
     runs-on: ubuntu-latest
 
     steps:
@@ -25,8 +25,44 @@ jobs:
       - name: Install dependencies
         run: npm install --no-package-lock --legacy-peer-deps
 
-      - name: Build backend
+      - name: Typecheck backend
         run: npm run build --prefix apps/backend
+
+  backend-test:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install --no-package-lock --legacy-peer-deps
+
+      - name: Run backend tests (Jest)
+        run: npm run test:jest --prefix apps/backend
+
+  frontend-build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install --no-package-lock --legacy-peer-deps
 
       - name: Build frontend
         run: npm run build --prefix apps/frontend

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import {
   listUsers,
   getUserOptions,
+  getUserTree,
   createUser,
   updateUser,
   updateUserStatus,
@@ -9,6 +10,8 @@ import {
 import { requireAuth, requireRole } from '../middlewares/auth.middleware';
 
 const router = Router();
+
+router.get('/tree', requireAuth, requireRole('admin', 'manager'), getUserTree);
 
 router.use(requireAuth, requireRole('admin'));
 

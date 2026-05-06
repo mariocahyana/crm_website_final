@@ -32,7 +32,7 @@ describe('leave.service', () => {
           department_id: 'dept-1',
           user: { role: 'staff' },
         } : undefined),
-        update: jest.fn().mockResolvedValue({}),
+        update: jest.fn().mockResolvedValue({} as never),
       };
 
       jest.spyOn(Employee, 'findByPk').mockResolvedValue({
@@ -64,7 +64,7 @@ describe('leave.service', () => {
           department_id: 'dept-1',
           user: { role: 'manager' },
         } : undefined),
-        update: jest.fn(),
+        update: jest.fn().mockResolvedValue({} as never),
       };
 
       jest.spyOn(Employee, 'findByPk').mockResolvedValue({
@@ -92,7 +92,7 @@ describe('leave.service', () => {
           department_id: 'dept-1',
           user: { role: 'staff' },
         } : undefined),
-        update: jest.fn().mockResolvedValue({}),
+        update: jest.fn().mockResolvedValue({} as never),
       };
 
       jest.spyOn(Employee, 'findByPk').mockResolvedValue({

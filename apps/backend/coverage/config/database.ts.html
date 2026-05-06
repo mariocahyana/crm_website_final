@@ -30,9 +30,9 @@
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">50% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>15/30</span>
+                <span class='fraction'>30/30</span>
             </div>
         
             
@@ -109,11 +109,9 @@
 <a name='L44'></a><a href='#L44'>44</a>
 <a name='L45'></a><a href='#L45'>45</a>
 <a name='L46'></a><a href='#L46'>46</a>
-<a name='L47'></a><a href='#L47'>47</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">6x</span>
+<a name='L47'></a><a href='#L47'>47</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">7x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">6x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">7x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -128,9 +126,9 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">6x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">7x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -155,7 +153,9 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">6x</span></td><td class="text"><pre class="prettyprint lang-js">import dotenv from 'dotenv';
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">7x</span></td><td class="text"><pre class="prettyprint lang-js">import dotenv from 'dotenv';
 &nbsp;
 dotenv.config();
 &nbsp;
@@ -176,27 +176,27 @@ type DbConfigByEnv = {
 &nbsp;
 const config: DbConfigByEnv = {
   development: {
-    username: process.env.DB_USER || <span class="branch-1 cbranch-no" title="branch not covered" >'postgres',</span>
-    password: process.env.DB_PASS || <span class="branch-1 cbranch-no" title="branch not covered" >'postgres',</span>
-    database: process.env.DB_NAME || <span class="branch-1 cbranch-no" title="branch not covered" >'tubes_rpll',</span>
-    host: process.env.DB_HOST || <span class="branch-1 cbranch-no" title="branch not covered" >'0.0.0.0',</span>
-    port: Number(process.env.DB_PORT) || <span class="branch-1 cbranch-no" title="branch not covered" >5433,</span>
+    username: process.env.DB_USER || 'postgres',
+    password: process.env.DB_PASS || 'postgres',
+    database: process.env.DB_NAME || 'tubes_rpll',
+    host: process.env.DB_HOST || '0.0.0.0',
+    port: Number(process.env.DB_PORT) || 5433,
     dialect: 'postgres',
   },
   test: {
-    username: process.env.DB_USER || <span class="branch-1 cbranch-no" title="branch not covered" >'postgres',</span>
-    password: process.env.DB_PASS || <span class="branch-1 cbranch-no" title="branch not covered" >'postgres',</span>
-    database: process.env.DB_NAME || <span class="branch-1 cbranch-no" title="branch not covered" >'tubes_rpll_test',</span>
-    host: process.env.DB_HOST || <span class="branch-1 cbranch-no" title="branch not covered" >'0.0.0.0',</span>
-    port: Number(process.env.DB_PORT) || <span class="branch-1 cbranch-no" title="branch not covered" >5433,</span>
+    username: process.env.DB_USER || 'postgres',
+    password: process.env.DB_PASS || 'postgres',
+    database: process.env.DB_NAME || 'tubes_rpll_test',
+    host: process.env.DB_HOST || '0.0.0.0',
+    port: Number(process.env.DB_PORT) || 5433,
     dialect: 'postgres',
   },
   production: {
-    username: process.env.DB_USER || <span class="branch-1 cbranch-no" title="branch not covered" >'',</span>
-    password: process.env.DB_PASS || <span class="branch-1 cbranch-no" title="branch not covered" >'',</span>
-    database: process.env.DB_NAME || <span class="branch-1 cbranch-no" title="branch not covered" >'',</span>
-    host: process.env.DB_HOST || <span class="branch-1 cbranch-no" title="branch not covered" >'',</span>
-    port: Number(process.env.DB_PORT) || <span class="branch-1 cbranch-no" title="branch not covered" >5433,</span>
+    username: process.env.DB_USER || '',
+    password: process.env.DB_PASS || '',
+    database: process.env.DB_NAME || '',
+    host: process.env.DB_HOST || '',
+    port: Number(process.env.DB_PORT) || 5433,
     dialect: 'postgres',
   },
 };
@@ -208,7 +208,7 @@ export default config;</pre></td></tr></table></pre>
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-05-06T06:37:34.249Z
+                at 2026-05-06T09:05:08.244Z
             </div>
         <script src="../prettify.js"></script>
         <script>
