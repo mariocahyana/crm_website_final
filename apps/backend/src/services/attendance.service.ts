@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { Op } from 'sequelize';
+import { Op, Transaction } from 'sequelize';
 import {
   sequelize,
   Attendance,
@@ -165,7 +165,7 @@ class AttendanceService {
           date: today,
         },
         transaction,
-        lock: transaction.LOCK.UPDATE,
+        lock: Transaction.LOCK.UPDATE,
       });
 
       if (existingAttendance && existingAttendance.getDataValue('check_in_at')) {

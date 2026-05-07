@@ -9,7 +9,18 @@ module.exports = {
   },
   coverageDirectory: '<rootDir>/coverage',
   collectCoverage: true,
-  coverageReporters: ['text', 'html'],
+  collectCoverageFrom: [
+    'src/controllers/{attendance,leave,payroll,profile,reimbursement,userManagement}.controller.ts',
+    'src/services/{attendance,leave,payroll,profile,reimbursement,userManagement}.service.ts',
+    '!**/*.test.ts',
+    '!**/node_modules/**',
+  ],
+  coverageReporters: ['text', 'html', 'json-summary'],
+  coverageThreshold: {
+    global: {
+      functions: 100,
+    },
+  },
   // Map imports from 'vitest' to our compatibility shim so existing tests work
   moduleNameMapper: {
     '^vitest$': '<rootDir>/vitest-compat.js',
