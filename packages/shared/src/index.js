@@ -1,1 +1,1 @@
-export const APP_NAME = 'TUBES RPLL';
+export const APP_NAME = 'CRM Website';
